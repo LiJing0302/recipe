@@ -1,0 +1,46 @@
+{
+  "pages": [
+    { "path": "pages/menu/index", "style": { "navigationBarTitleText": "今日菜单" } },
+    { "path": "pages/basket/index", "style": { "navigationBarTitleText": "菜篮子" } },
+    { "path": "pages/ingredients/index", "style": { "navigationStyle": "custom", "navigationBarTitleText": "食材库" } },
+    { "path": "pages/ingredients/storage", "style": { "navigationBarTitleText": "食材区域" } },
+    { "path": "pages/ingredients/categories", "style": { "navigationBarTitleText": "食材分类" } },
+    { "path": "pages/my-recipes/index", "style": { "navigationBarTitleText": "我的食谱" } },
+    { "path": "pages/shared-recipes/index", "style": { "navigationBarTitleText": "分享食谱" } },
+    { "path": "pages/profile/index", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/index/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/community/index", "style": { "navigationBarTitleText": "广场" } },
+    { "path": "pages/recipe/detail", "style": { "navigationBarTitleText": "食谱详情" } },
+    { "path": "pages/recipe/edit", "style": { "navigationBarTitleText": "新建食谱" } },
+    { "path": "pages/scan/index", "style": { "navigationBarTitleText": "识别我的食材" } },
+    { "path": "pages/cook/index", "style": { "navigationBarTitleText": "烹饪模式" } },
+    { "path": "pages/database/schema", "style": { "navigationBarTitleText": "数据库结构" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "食光 AI",
+    "navigationBarBackgroundColor": "#FDF8F2",
+    "backgroundColor": "#FDF8F2",
+    "backgroundTextStyle": "light"
+  },
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^u-(.*)": "uview-plus/components/u-$1/u-$1.vue",
+      "^up-(.*)": "uview-plus/components/u-$1/u-$1.vue"
+    }
+  },
+  "tabBar": {
+    "color": "#A29388",
+    "selectedColor": "#E8542E",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/menu/index", "text": "菜单", "iconPath": "static/tabbar/menu.png", "selectedIconPath": "static/tabbar/menu-active.png" },
+      { "pagePath": "pages/basket/index", "text": "菜篮子", "iconPath": "static/tabbar/basket.png", "selectedIconPath": "static/tabbar/basket-active.png" },
+      { "pagePath": "pages/ingredients/index", "text": "食材库", "iconPath": "static/tabbar/ingredients.png", "selectedIconPath": "static/tabbar/ingredients-active.png" },
+      { "pagePath": "pages/community/index", "text": "广场", "iconPath": "static/tabbar/recipes.png", "selectedIconPath": "static/tabbar/recipes-active.png" },
+      { "pagePath": "pages/my-recipes/index", "text": "食谱", "iconPath": "static/tabbar/recipes.png", "selectedIconPath": "static/tabbar/recipes-active.png" }
+    ]
+  }
+}

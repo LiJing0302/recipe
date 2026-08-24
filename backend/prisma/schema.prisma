@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String                   @id
+  account              String?                  @unique
+  passwordHash         String?
+  name                 String
+  avatar               String                   @default("")
+  bio                  String                   @default("")
+  cookingDays          Int                      @default(0)
+  totalCooking         Int                      @default(0)
+  favoriteCount        Int                      @default(0)
+  recipes              Recipe[]
+  categories           RecipeCategory[]
+  ingredientProfiles   UserIngredientProfile[]
+  shareLink            RecipeShareLink?
+  recipeImports        RecipeImport[]           @relation("RecipeImportOwner")
+  ingredientCategories UserIngredientCategory[]
+  ingredientMappings   UserIngredientMapping[]
+  inventoryBatches     InventoryBatch[]
+  basketItems          BasketItem[]
+  menuEntries          MenuEntry[]
+  following            UserFollow[]             @relation("FollowFollower")
+  followers            UserFollow[]             @relation("FollowFollowing")
+  collections          RecipeCollection[]
+  orders               Order[]
+  cookingRecords       CookingRecord[]
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+}
+
+model UserIngredientProfile {
+  id             String               @id @default(cuid())
+  userId         String
+  ingredientKey  String
+  name           String
+  category       String
+  roomDays       Int
+  fridgeDays     Int
+  frozenDays     Int
+  fridgeSuitable Boolean              @default(true)
+  showExtraUnit  Boolean              @default(true)
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extraUnits     UserIngredientUnit[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([userId, ingredientKey])
+  @@index([userId, category])
+}
+
+model UserIngredientUnit {
+  id        String                @id @default(cuid())
+  profileId String
+  unitKey   String
+  unitName  String
+  baseUnit  String?
+  baseValue Decimal?              @db.Decimal(18, 6)
+  enabled   Boolean               @default(true)
+  profile   UserIngredientProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@unique([profileId, unitKey])
+  @@index([profileId, enabled])
+}
+
+model RecipeCategory {
+  id        String   @id @default(cuid())
+  name      String
+  position  Int      @default(0)
+  isDefault Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, position])
+}
+
+model Recipe {
+  id             String             @id @default(cuid())
+  title          String
+  subtitle       String
+  cover          String
+  source         String             @default("user")
+  authorId       String
+  author         User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categories     String[]           @default([])
+  tags           String[]
+  flavor         String
+  servings       Int
+  duration       Int
+  difficulty     String
+  rating         Float              @default(0)
+  ratingCount    Int                @default(0)
+  cookingCount   Int                @default(0)
+  skillLevel     Int                @default(1)
+  isPublic       Boolean            @default(true)
+  ingredients    Json               @default("[]")
+  steps          Json               @default("[]")
+  importRecord   RecipeImport?      @relation("RecipeImportCopy")
+  importedCopies RecipeImport[]     @relation("RecipeImportOrigin")
+  menuEntries    MenuEntry[]
+  collections    RecipeCollection[]
+  orders         Order[]
+  cookingRecords CookingRecord[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([authorId, createdAt])
+  @@index([isPublic, createdAt])
+}
+
+model UserIngredientCategory {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  position  Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, position])
+}
+
+model UserIngredientMapping {
+  id                   String   @id @default(cuid())
+  userId               String
+  sourceName           String
+  normalizedSourceName String
+  ingredientKey        String
+  targetName           String?
+  targetCategory       String?
+  matchMethod          String
+  confidence           Decimal? @db.Decimal(6, 5)
+  confirmedAt          DateTime
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([userId, normalizedSourceName])
+  @@index([userId, ingredientKey])
+}
+
+model InventoryBatch {
+  id             String    @id @default(cuid())
+  userId         String
+  name           String
+  normalizedName String
+  ingredientKey  String?
+  category       String
+  purchasedAt    DateTime
+  sourceType     String
+  recipeId       String?
+  recipeTitle    String?
+  basketItemId   String?
+  storageMode    String
+  expiresAt      DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, ingredientKey])
+  @@index([userId, purchasedAt])
+}
+
+model BasketItem {
+  id               String   @id @default(cuid())
+  userId           String
+  ingredientId     String
+  ingredientName   String
+  ingredientKey    String?
+  matchMethod      String?
+  amount           Json
+  sourceConversion Json?
+  recipeId         String
+  recipeTitle      String
+  recipeCover      String
+  addedAt          DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId, ingredientId])
+  @@index([userId, ingredientKey])
+}
+
+model MenuEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime @db.Date
+  meal      String
+  recipeId  String
+  orderedBy String   @default("")
+  note      String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date, meal, recipeId, orderedBy])
+  @@index([userId, date])
+}
+
+model UserFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model RecipeCollection {
+  id        String   @id @default(cuid())
+  userId    String
+  recipeId  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, recipeId])
+  @@index([userId, createdAt])
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  userId      String
+  recipeId    String
+  recipeTitle String
+  hostName    String
+  guestName   String
+  date        DateTime @db.Date
+  note        String
+  status      String   @default("pending")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, date])
+}
+
+model CookingRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  recipeId     String
+  recipeTitle  String
+  date         DateTime @db.Date
+  duration     Int
+  rating       Int
+  comment      String
+  guestComment String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe       Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+model RecipeImport {
+  id             String   @id @default(cuid())
+  ownerId        String
+  originRecipeId String
+  originAuthorId String
+  copiedRecipeId String   @unique
+  importedAt     DateTime @default(now())
+  owner          User     @relation("RecipeImportOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  originRecipe   Recipe   @relation("RecipeImportOrigin", fields: [originRecipeId], references: [id], onDelete: Cascade)
+  copiedRecipe   Recipe   @relation("RecipeImportCopy", fields: [copiedRecipeId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, originRecipeId])
+  @@index([originRecipeId])
+}
+
+model RecipeShareLink {
+  id             String   @id @default(cuid())
+  codeHash       String   @unique
+  codeCiphertext String
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}

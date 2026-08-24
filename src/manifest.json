@@ -1,0 +1,19 @@
+{
+  "name": "食光 AI",
+  "appid": "__UNI__RECIPE_AI__",
+  "description": "食谱、AI 和社区的一体化厨房助手",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true,
+      "postcss": true,
+      "minifyWXSS": true
+    },
+    "usingComponents": true
+  }
+}

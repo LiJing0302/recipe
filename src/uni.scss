@@ -1,0 +1,64 @@
+// ============================================================
+// 食光 AI · 温暖食欲系（Warm Appetite）设计令牌
+// 主色：番茄红 + 蜜桔橙 ｜ 底色：奶油 ｜ 点缀：琥珀金 + 香草绿
+// ============================================================
+
+// ---- 品牌色 ----
+$brand: #e8542e;            // 番茄红（主品牌色）
+$brand-dark: #c93d20;       // 番茄红（深，按压/渐变末端）
+$brand-soft: #fdeee7;       // 番茄红浅底
+$brand-disabled: #f5b6a3;   // 番茄红禁用
+
+$accent: #ff8a3d;           // 蜜桔橙（渐变起始/强调）
+$accent-soft: #fff1e6;      // 蜜桔橙浅底
+$gold: #e9a13b;             // 琥珀金（评分/点缀）
+$gold-soft: #fdf3e0;
+
+$sage: #7ba05b;             // 香草绿（新鲜感点缀）
+$sage-soft: #eef4e8;        // 香草绿浅底
+
+// ---- 中性色 ----
+$paper: #fdf8f2;            // 奶油背景
+$surface: #ffffff;          // 卡片表面
+$ink: #33261e;              // 主文字（暖褐）
+$ink-soft: #6f5f54;         // 次级文字
+$ink-faint: #a29388;        // 弱文字/占位
+$line: #f0e3d6;             // 分隔线/浅边框
+$line-strong: #e4d3c2;      // 深边框
+
+// ---- 圆角 ----
+$radius-lg: 32rpx;
+$radius-md: 24rpx;
+$radius-sm: 16rpx;
+$radius-pill: 999rpx;
+
+// ---- 阴影（暖色柔和投影） ----
+$shadow-card: 0 12rpx 32rpx rgba(214, 96, 44, .08);
+$shadow-float: 0 20rpx 48rpx rgba(214, 96, 44, .14);
+$shadow-brand: 0 14rpx 30rpx rgba(232, 84, 46, .28);
+
+// ============================================================
+// uview-plus 主题变量同步（需在 import 之前定义）
+// ============================================================
+$u-primary: $brand;
+$u-primary-dark: $brand-dark;
+$u-primary-light: $brand-soft;
+$u-primary-disabled: $brand-disabled;
+$u-warning: $gold;
+$u-warning-dark: #d18b2a;
+$u-warning-light: $gold-soft;
+$u-success: $sage;
+$u-success-dark: #64894a;
+$u-success-light: $sage-soft;
+$u-error: $brand;
+$u-error-dark: $brand-dark;
+$u-error-light: $brand-soft;
+$u-bg-color: $paper;
+$u-main-color: $ink;
+$u-content-color: $ink-soft;
+$u-tips-color: $ink-faint;
+$u-light-color: #cbb8a8;
+$u-border-color: $line-strong;
+$u-disabled-color: #d8c8ba;
+
+@import 'uview-plus/index.scss';

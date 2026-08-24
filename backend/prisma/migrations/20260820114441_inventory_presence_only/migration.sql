@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "InventoryBatch" ALTER COLUMN "quantity" DROP NOT NULL,
+ALTER COLUMN "unit" DROP NOT NULL,
+ALTER COLUMN "price" DROP NOT NULL;
