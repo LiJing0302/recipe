@@ -5,7 +5,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
 import { getBasketRecipes, loadBasket, purchaseBasketItems, removeRecipeFromBasket } from '@/services/basket'
 import { addInventoryBatch, getFreshness, getInventoryBatches, getInventoryBatchesForDate, loadInventoryBatches } from '@/services/inventory'
-import { getIngredientCategory } from '@/constants/ingredients'
+import { getIngredientCategory, INGREDIENT_CATALOG, INGREDIENT_CATEGORIES } from '@/constants/ingredients'
 import { formatIngredientAmount, getIngredientKey } from '@/services/ingredient-matching'
 import { formatDate } from '@/services/menu'
 import type { BasketPendingItem, IngredientInventoryBatch } from '@/types'
@@ -30,6 +30,12 @@ type PendingRecipeGroup = {
   purchasedBatches: IngredientInventoryBatch[]
 }
 const purchaseGroup = ref<PendingIngredientGroup>()
+
+const getBasketIngredientCategory = (name: string, ingredientKey?: string) => {
+  const key = ingredientKey || getIngredientKey(name)
+  const mappedIngredient = INGREDIENT_CATALOG.find((item) => getIngredientKey(item.name) === key)
+  return mappedIngredient?.category || getIngredientCategory(name)
+}
 
 const load = async () => {
   await Promise.all([loadBasket(), loadInventoryBatches()])
@@ -71,15 +77,22 @@ const pendingRecipeGroups = computed<PendingRecipeGroup[]>(() => {
   return [...groups.values()]
 })
 
-const summaryText = computed(() => viewMode.value === 'ingredient'
-  ? `待采购 ${pendingItems.value.length} 项`
-  : `待采购 ${pendingItems.value.length} 项 · 已采购 ${todayBatches.value.length} 项`)
+const pendingCategoryGroups = computed(() => {
+  const counts = new Map<string, number>()
+  pendingGroups.value.forEach((group) => {
+    const category = getBasketIngredientCategory(group.name, group.key)
+    counts.set(category, (counts.get(category) || 0) + 1)
+  })
+  return INGREDIENT_CATEGORIES
+    .filter((category) => counts.has(category))
+    .map((category) => ({ name: category, count: counts.get(category) || 0 }))
+})
 const hasVisibleItems = computed(() => viewMode.value === 'ingredient' ? pendingGroups.value.length > 0 : pendingRecipeGroups.value.length > 0)
 const pendingFormBatch = computed<IngredientInventoryBatch | undefined>(() => {
   if (!purchaseGroup.value) return undefined
   const group = purchaseGroup.value
   return {
-    id: '', userId: '', name: group.name, normalizedName: '', category: getIngredientCategory(group.name),
+    id: '', userId: '', name: group.name, normalizedName: '', category: getBasketIngredientCategory(group.name, group.key),
     purchasedAt: formatDate(), sourceType: 'recipe', recipeId: group.items[0].recipeId, recipeTitle: group.recipes.join('、'),
     basketItemId: group.items[0].id, ingredientKey: group.key, storageMode: 'chilled', createdAt: ''
   }
@@ -130,7 +143,7 @@ onShow(load)
       <view class="intro-copy"><text class="eyebrow">GROCERY BASKET</text><text class="page-title">菜篮子</text><text class="page-desc">把要买的和刚买到的，放在一起看清楚</text></view>
       <button class="add-purchase" aria-label="添加今日购入" @click="openManualForm"><AppIcon name="plus" size="sm" /><text>今日购入</text></button>
     </view>
-    <view class="basket-summary"><view class="summary-mark"><AppIcon name="bag" size="lg" /></view><view class="summary-copy"><text class="summary-title">采购清单</text><text class="summary-caption">{{ summaryText }}</text></view><AppIcon name="chevron-right" size="sm" /></view>
+    <view class="basket-summary"><view class="summary-mark"><AppIcon name="bag" size="lg" /></view><view class="summary-copy"><text class="summary-title">采购清单</text><view v-if="pendingCategoryGroups.length" class="summary-categories"><view v-for="category in pendingCategoryGroups" :key="category.name" class="summary-category"><text>{{ category.name }}</text><text>{{ category.count }}项</text></view></view><text v-else class="summary-caption">暂无待采购食材</text></view><AppIcon name="chevron-right" size="sm" /></view>
     <view class="view-switch" role="tablist">
       <button class="view-switch-item" :class="{ active: viewMode === 'ingredient' }" @click="viewMode = 'ingredient'">按食材</button>
       <button class="view-switch-item" :class="{ active: viewMode === 'recipe' }" @click="viewMode = 'recipe'">按菜谱</button>
@@ -192,6 +205,9 @@ onShow(load)
 .summary-copy { flex: 1; }
 .summary-title, .summary-caption { display: block; }
 .summary-title { color: #235a49; font-size: 27rpx; font-weight: 750; }
+.summary-categories { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 8rpx; }
+.summary-category { display: inline-flex; align-items: center; gap: 5rpx; padding: 5rpx 10rpx; border: 1rpx solid #d9e9df; border-radius: 999rpx; background: #f7fcf8; color: #3d6c58; font-size: 19rpx; line-height: 1.2; white-space: nowrap; }
+.summary-category text:last-child { color: #789489; }
 .summary-caption { margin-top: 5rpx; color: #789489; font-size: 21rpx; }
 .view-switch { display: flex; gap: 6rpx; margin-top: 18rpx; padding: 6rpx; border: 1rpx solid #f0e3d6; border-radius: 16rpx; background: #fff7f0; }
 .view-switch-item { flex: 1; height: 58rpx; padding: 0; border: 0; border-radius: 11rpx; background: transparent; color: #a29388; font-size: 22rpx; line-height: 58rpx; }

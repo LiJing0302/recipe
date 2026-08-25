@@ -3,6 +3,7 @@ import { onHide, onShow } from '@dcloudio/uni-app'
 import { computed, nextTick, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
+import { INGREDIENTS_KITCHEN_CONFIG, kitchenZoneConfigs } from '@/config/ingredients-kitchen'
 import { addInventoryBatch, getFreshness, getInventoryBatches, loadInventoryBatches, updateInventoryBatch } from '@/services/inventory'
 import { filterInventoryByZone, groupInventoryBatches, type IngredientGroup, type InventoryZone } from '@/services/inventory-view'
 import type { IngredientInventoryBatch } from '@/types'
@@ -12,13 +13,39 @@ const formOpen = ref(false)
 const editingBatch = ref<IngredientInventoryBatch>()
 type FridgeInteraction = 'idle' | 'opening' | 'opened' | 'closing'
 const fridgeInteraction = ref<FridgeInteraction>('idle')
-const fridgeAlignmentDebug = import.meta.env.DEV
+const kitchenConfig = INGREDIENTS_KITCHEN_CONFIG
+const kitchenZones = kitchenZoneConfigs
+const fridgeAlignmentDebug = import.meta.env.DEV && kitchenConfig.fridgeVideo.debugPreview.enabled
 const fridgeVideoActive = ref(false)
 let fridgeVideoContext: ReturnType<typeof uni.createVideoContext> | null = null
 let fridgeReverseTimer: ReturnType<typeof setInterval> | null = null
 let fridgeVideoCurrentTime = 0
 let fridgeVideoDuration = 0
-const zoneKeys: InventoryZone[] = ['fridge', 'seasoning', 'vegetable']
+const zoneKeys: InventoryZone[] = kitchenZones.map((zone) => zone.key)
+const kitchenCssVars = {
+	'--kitchen-bg-color': kitchenConfig.background.color,
+	'--kitchen-main-width': `min(100%, calc((100vh - var(--window-bottom)) * ${kitchenConfig.background.main.widthByViewportHeight}))`,
+	'--kitchen-main-aspect-ratio': kitchenConfig.background.main.aspectRatio,
+	'--kitchen-blank-height': `max(0px, calc((100% - ${kitchenConfig.background.main.canvasWidthVw}vw) / 2))`,
+	'--kitchen-canvas-transform': kitchenConfig.canvasAnimation.default.transform,
+	'--kitchen-canvas-focus-transform': kitchenConfig.canvasAnimation.fridgeFocus.transform,
+	'--kitchen-canvas-transform-origin': kitchenConfig.canvasAnimation.transformOrigin,
+	'--kitchen-canvas-transition': `${kitchenConfig.canvasAnimation.durationMs}ms ${kitchenConfig.canvasAnimation.easing}`,
+	'--kitchen-overlay-transition': `${kitchenConfig.overlay.fadeDurationMs}ms ease`,
+	'--kitchen-background-blur': kitchenConfig.backgroundBlur.opened,
+	'--kitchen-background-transition': `${kitchenConfig.backgroundBlur.transitionDurationMs}ms ease`,
+	'--kitchen-background-opacity-transition': `${kitchenConfig.backgroundReveal.opacityDurationMs}ms ease`,
+	'--fridge-video-anchor-x': kitchenConfig.fridgeVideo.anchor.x,
+	'--fridge-video-anchor-y': kitchenConfig.fridgeVideo.anchor.y,
+	'--fridge-video-width': kitchenConfig.fridgeVideo.width,
+	'--fridge-video-aspect-ratio': kitchenConfig.fridgeVideo.aspectRatio,
+	'--fridge-video-scale': String(kitchenConfig.fridgeVideo.scale),
+	'--fridge-video-opened-opacity': String(kitchenConfig.fridgeVideo.openedOpacity),
+	'--fridge-video-debug-opacity': String(kitchenConfig.fridgeVideo.debugPreview.opacity),
+	'--fridge-video-transition': `${kitchenConfig.fridgeVideo.transitionDurationMs}ms ease`,
+	'--fridge-video-reveal-duration': `${kitchenConfig.fridgeVideo.reveal.durationMs}ms ${kitchenConfig.fridgeVideo.reveal.easing}`
+}
+const getZoneHotspotStyle = (zone: (typeof kitchenZones)[number]) => zone.hotspot
 type ZoneStats = { groups: IngredientGroup[]; fresh: number; expiring: number; expired: number }
 const zoneStats = computed<Record<InventoryZone, ZoneStats>>(() => {
 	const result = {} as Record<InventoryZone, ZoneStats>
@@ -58,25 +85,24 @@ const closeFridgeAnimation = () => {
 
 	fridgeInteraction.value = 'closing'
 	fridgeVideoContext?.pause()
-	let reverseTime = Math.max(fridgeVideoCurrentTime, fridgeVideoDuration, 1.033)
+	let reverseTime = Math.max(fridgeVideoCurrentTime, fridgeVideoDuration, kitchenConfig.fridgeReverse.fallbackDurationSeconds)
 	fridgeVideoContext?.seek(reverseTime)
 	fridgeReverseTimer = setInterval(() => {
-		reverseTime -= 0.05
+		reverseTime -= kitchenConfig.fridgeReverse.stepSeconds
 		if (reverseTime <= 0) {
 			fridgeVideoContext?.seek(0)
 			resetFridgeAnimation()
 			return
 		}
 		fridgeVideoContext?.seek(reverseTime)
-	}, 33)
+	}, kitchenConfig.fridgeReverse.tickMs)
 }
 const startFridgeVideo = () => {
 	fridgeVideoContext = uni.createVideoContext('fridge-open-video')
 	fridgeVideoActive.value = true
 	fridgeVideoCurrentTime = 0
 	fridgeVideoDuration = 0
-	// @lijing 控制视频播放倍率
-	fridgeVideoContext?.playbackRate(1.5)
+	fridgeVideoContext?.playbackRate(kitchenConfig.fridgeVideo.playbackRate)
 	fridgeVideoContext.play()
 }
 const openFridge = () => {
@@ -93,6 +119,10 @@ const handleFridgeVideoTimeUpdate = (event: { detail?: { currentTime?: number; d
 const handleFridgeVideoEnded = () => { fridgeInteraction.value = 'opened' }
 const handleFridgeVideoError = () => { fridgeVideoActive.value = false; fridgeInteraction.value = 'opened' }
 const openFridgeList = () => { resetFridgeAnimation(); openZone('fridge') }
+const handleZoneClick = (zone: InventoryZone) => {
+	if (zone === 'fridge') openFridge()
+	else openZone(zone)
+}
 const setPageScrollLock = (locked: boolean) => {
 	// #ifdef H5
 	if (typeof document !== 'undefined') {
@@ -115,86 +145,48 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 </script>
 
 <template>
-	<view class="kitchen-page">
+	<view class="kitchen-page" :style="kitchenCssVars">
 		<view class="kitchen-scene"
 			:class="{ 'is-fridge-opening': fridgeInteraction === 'opening', 'is-fridge-opened': fridgeInteraction === 'opened', 'is-video-active': fridgeVideoActive, 'is-fridge-debug-preview': fridgeAlignmentDebug }"
 			aria-label="厨房食材存放区域">
 			<view class="kitchen-media-canvas">
 				<view class="kitchen-background">
 					<view class="kitchen-top-blank">
-						<image class="kitchen-top-blank-image" src="/static/ingredients/kitchen-storage-top.png"
+						<image class="kitchen-top-blank-image" :src="kitchenConfig.background.topBlank.src"
 							mode="scaleToFill" />
 					</view>
 					<view class="kitchen-bottom-floor">
-						<image class="kitchen-bottom-floor-image" src="/static/ingredients/kitchen-storage-floor.png"
+						<image class="kitchen-bottom-floor-image" :src="kitchenConfig.background.bottomFloor.src"
 							mode="scaleToFill" />
 					</view>
 					<view class="kitchen-main-region">
-						<image class="kitchen-main-image" src="/static/ingredients/kitchen-storage-main.png"
+						<image class="kitchen-main-image" :src="kitchenConfig.background.main.src"
 							mode="scaleToFill" />
 						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle'" id="fridge-open-video"
-							class="fridge-animation-video" src="/static/ingredients/fridge-open.mp4" :autoplay="false"
+							class="fridge-animation-video" :src="kitchenConfig.fridgeVideo.src" :autoplay="false"
 							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
 							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-							object-fit="cover" muted playsinline @timeupdate="handleFridgeVideoTimeUpdate"
+								:object-fit="kitchenConfig.fridgeVideo.objectFit" :object-position="kitchenConfig.fridgeVideo.objectPosition"
+								muted playsinline @timeupdate="handleFridgeVideoTimeUpdate"
 							@ended="handleFridgeVideoEnded"
 							@error="handleFridgeVideoError" />
 						<view class="main-overlay">
-							<view class="scene-hotspot fridge-hotspot" aria-label="打开冰箱动画" @click="openFridge">
+							<view v-for="zone in kitchenZones" :key="zone.key" class="scene-hotspot"
+								:style="getZoneHotspotStyle(zone)" :aria-label="zone.ariaLabel" @click="handleZoneClick(zone.key)">
 								<view class="zone-panel">
-									<view class="zone-heading"><text class="zone-code">FRIDGE</text><text
-										class="zone-name">冰箱</text></view>
-									<view class="zone-count"><text>{{ getZoneStats('fridge').groups.length }}</text><text>种食材</text>
+									<view class="zone-heading"><text class="zone-code">{{ zone.code }}</text><text
+										class="zone-name">{{ zone.name }}</text></view>
+									<view class="zone-count"><text>{{ getZoneStats(zone.key).groups.length }}</text><text>种食材</text>
 									</view>
 									<view class="zone-status">
 										<view class="status-item fresh">
-											<text>新鲜</text><text>{{ getZoneStats('fridge').fresh }}</text>
+											<text>新鲜</text><text>{{ getZoneStats(zone.key).fresh }}</text>
 										</view>
 										<view class="status-item expiring">
-											<text>临期</text><text>{{ getZoneStats('fridge').expiring }}</text>
+											<text>临期</text><text>{{ getZoneStats(zone.key).expiring }}</text>
 										</view>
 										<view class="status-item expired">
-											<text>过期</text><text>{{ getZoneStats('fridge').expired }}</text>
-										</view>
-									</view>
-								</view>
-							</view>
-							<view class="scene-hotspot seasoning-hotspot" aria-label="打开调料台食材列表" @click="openZone('seasoning')">
-								<view class="zone-panel">
-									<view class="zone-heading"><text class="zone-code">SEASONING</text><text
-										class="zone-name">调料台</text></view>
-									<view class="zone-count">
-										<text>{{ getZoneStats('seasoning').groups.length }}</text><text>种食材</text>
-									</view>
-									<view class="zone-status">
-										<view class="status-item fresh">
-											<text>新鲜</text><text>{{ getZoneStats('seasoning').fresh }}</text>
-										</view>
-										<view class="status-item expiring">
-											<text>临期</text><text>{{ getZoneStats('seasoning').expiring }}</text>
-										</view>
-										<view class="status-item expired">
-											<text>过期</text><text>{{ getZoneStats('seasoning').expired }}</text>
-										</view>
-									</view>
-								</view>
-							</view>
-							<view class="scene-hotspot vegetable-hotspot" aria-label="打开蔬菜架食材列表" @click="openZone('vegetable')">
-								<view class="zone-panel">
-									<view class="zone-heading"><text class="zone-code">VEGETABLE</text><text
-										class="zone-name">蔬菜架</text></view>
-									<view class="zone-count">
-										<text>{{ getZoneStats('vegetable').groups.length }}</text><text>种食材</text>
-									</view>
-									<view class="zone-status">
-										<view class="status-item fresh">
-											<text>新鲜</text><text>{{ getZoneStats('vegetable').fresh }}</text>
-										</view>
-										<view class="status-item expiring">
-											<text>临期</text><text>{{ getZoneStats('vegetable').expiring }}</text>
-										</view>
-										<view class="status-item expired">
-											<text>过期</text><text>{{ getZoneStats('vegetable').expired }}</text>
+											<text>过期</text><text>{{ getZoneStats(zone.key).expired }}</text>
 										</view>
 									</view>
 								</view>
@@ -260,7 +252,7 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	min-height: 0;
 	padding: 0;
 	overflow: hidden;
-	background: #c9a174;
+	background: var(--kitchen-bg-color);
 }
 
 .kitchen-scene {
@@ -268,15 +260,14 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	width: 100%;
 	height: 100%;
 	overflow: hidden;
-	background: #c9a174;
+	background: var(--kitchen-bg-color);
 }
-/* @lijing 控制动画放大速度曲线 */
 .kitchen-media-canvas {
 	position: absolute;
 	inset: 0;
-	transform: scale(1);
-	transform-origin: 58% 45%;
-	transition: transform 780ms ease-in-out;
+	transform: var(--kitchen-canvas-transform);
+	transform-origin: var(--kitchen-canvas-transform-origin);
+	transition: transform var(--kitchen-canvas-transition);
 }
 
 .kitchen-background {
@@ -289,9 +280,9 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	position: absolute;
 	right: 0;
 	left: 0;
-	height: max(0px, calc((100% - 91.392vw) / 2));
+	height: var(--kitchen-blank-height);
 	overflow: hidden;
-	background: #c9a174;
+	background: var(--kitchen-bg-color);
 }
 
 .kitchen-top-blank {
@@ -318,8 +309,8 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	position: absolute;
 	top: 50%;
 	left: 50%;
-	width: min(100%, calc((100vh - var(--window-bottom)) * 1.09419));
-	aspect-ratio: 941 / 860;
+	width: var(--kitchen-main-width);
+	aspect-ratio: var(--kitchen-main-aspect-ratio);
 	transform: translate(-50%, -50%);
 }
 
@@ -337,7 +328,7 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 
 .kitchen-scene.is-fridge-opening .kitchen-media-canvas,
 .kitchen-scene.is-fridge-opened .kitchen-media-canvas {
-	transform: translate(-60rpx, -80rpx) scale(1.92);
+	transform: var(--kitchen-canvas-focus-transform);
 }
 
 .kitchen-scene.is-fridge-opening .main-overlay,
@@ -349,18 +340,18 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	opacity: 0;
 	visibility: hidden;
 	pointer-events: none;
-	transition: opacity 180ms ease, visibility 0s linear 180ms;
+	transition: opacity var(--kitchen-overlay-transition), visibility 0s linear var(--kitchen-overlay-transition);
 }
 
 .kitchen-scene.is-fridge-opened .kitchen-background {
 	opacity: 1;
-	transition: opacity 650ms ease, filter 900ms ease;
+	transition: opacity var(--kitchen-background-opacity-transition), filter var(--kitchen-background-transition);
 }
 
 .kitchen-scene.is-fridge-opened .kitchen-top-blank-image,
 .kitchen-scene.is-fridge-opened .kitchen-main-image,
 .kitchen-scene.is-fridge-opened .kitchen-bottom-floor-image {
-	filter: blur(8rpx);
+	filter: blur(var(--kitchen-background-blur));
 }
 
 .kitchen-top-blank-image,
@@ -489,27 +480,6 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	background: rgba(255, 255, 255, .14);
 }
 
-.fridge-hotspot {
-	left: 40%;
-	top: 20%;
-	width: 34%;
-	height: 78%;
-}
-
-.seasoning-hotspot {
-	left: 0;
-	top: 45%;
-	width: 40%;
-	height: 49%;
-}
-
-.vegetable-hotspot {
-	right: 0;
-	top: 25%;
-	width: 26%;
-	height: 75%;
-}
-
 .zone-panel {
 	position: absolute;
 	right: 7%;
@@ -624,21 +594,17 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	background: transparent;
 	pointer-events: auto;
 }
-/* @lijing 控制视频相对中心背景图坐标 */
 .fridge-animation-video {
-	/* 锚点相对于冰箱主体区域，而不是整个屏幕画布。 */
-	--video-anchor-x: 28%;
-	--video-anchor-y: -1.4%;
-	--video-width: 59.6%;
+	/* 变量来自 src/config/ingredients-kitchen.ts，坐标系是主体画布。 */
 	position: absolute;
-	top: var(--video-anchor-y);
-	left: var(--video-anchor-x);
+	top: var(--fridge-video-anchor-y);
+	left: var(--fridge-video-anchor-x);
 	z-index: 2;
-	width: var(--video-width);
+	width: var(--fridge-video-width);
 	height: auto;
-	aspect-ratio: 720 / 1192;
+	aspect-ratio: var(--fridge-video-aspect-ratio);
 	opacity: 0;
-	transform: translate(-50%, -50%) scale(var(--video-scale));
+	transform: scale(var(--fridge-video-scale));
 	transform-origin: center center;
 	object-fit: cover;
 	object-position: center;
@@ -646,21 +612,21 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 }
 
 .kitchen-scene.is-fridge-debug-preview:not(.is-video-active):not(.is-fridge-opened) .fridge-animation-video {
-	opacity: 0;
+	opacity: var(--fridge-video-debug-opacity);
 }
 
 .kitchen-scene.is-video-active .fridge-animation-video {
-	animation: fridge-video-reveal 900ms ease 0ms forwards;
+	animation: fridge-video-reveal var(--fridge-video-reveal-duration) 0ms forwards;
 }
 
 .kitchen-scene.is-fridge-opened .fridge-animation-video {
-	opacity: .96;
+	opacity: var(--fridge-video-opened-opacity);
 	/* filter: blur(5rpx); */
-	transition: opacity 700ms ease, filter 900ms ease;
+	transition: opacity var(--fridge-video-transition), filter var(--kitchen-background-transition);
 }
 
 .kitchen-scene.is-fridge-closing .fridge-animation-video {
-	opacity: .96;
+	opacity: var(--fridge-video-opened-opacity);
 }
 
 .fridge-animation-layer.is-opening .fridge-animation-close {
