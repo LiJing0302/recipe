@@ -71,20 +71,25 @@ export type KitchenSkinConfig = {
   overlay: { fadeDurationMs: number };
 };
 
+const kitchenAssetUrl = (key: string) =>
+  `https://api.wenjun.cc.cd/api/uploads/object?key=${encodeURIComponent(key)}`;
+
+const kitchenAssetPrefix = "recipe-assets/ingredients";
+
 export const KITCHEN_SKINS = {
   "skin-1": {
     id: "skin-1",
     name: "原木厨房",
     background: {
       color: "#c9a174",
-      topBlank: { src: "/static/ingredients/kitchen-storage-top.png" },
+      topBlank: { src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/kitchen-storage-top.png`) },
       main: {
-        src: "/static/ingredients/kitchen-storage-main.png",
+        src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/kitchen-storage-main.png`),
         aspectRatio: "941 / 860",
         widthByViewportHeight: 1.09419,
         canvasWidthVw: 91.392,
       },
-      bottomFloor: { src: "/static/ingredients/kitchen-storage-floor.png" },
+      bottomFloor: { src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/kitchen-storage-floor.png`) },
     },
     zones: [
       {
@@ -117,7 +122,7 @@ export const KITCHEN_SKINS = {
       easing: "ease-in-out",
     },
     fridgeVideo: {
-      src: "/static/ingredients/fridge-open.mp4",
+      src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/fridge-open.mp4`),
       anchor: { x: "28%", y: "-1.4%" },
       width: "59.6%",
       aspectRatio: "720 / 1192",
@@ -145,16 +150,16 @@ export const KITCHEN_SKINS = {
     background: {
       color: "#e5ae72",
       topBlank: {
-        src: "/static/ingredients/skins/skin-2/kitchen-storage-top.png",
+        src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/kitchen-storage-top.png`),
       },
       main: {
-        src: "/static/ingredients/skins/skin-2/kitchen-storage-main.png",
+        src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/kitchen-storage-main.png`),
         aspectRatio: "768 / 732",
         widthByViewportHeight: 1.04918,
         canvasWidthVw: 95.3125,
       },
       bottomFloor: {
-        src: "/static/ingredients/skins/skin-2/kitchen-storage-floor.png",
+        src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/kitchen-storage-floor.png`),
       },
     },
     zones: [
@@ -190,7 +195,7 @@ export const KITCHEN_SKINS = {
       easing: "ease-in-out",
     },
     fridgeVideo: {
-      src: "/static/ingredients/skins/skin-2/fridge-open.mp4",
+      src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/fridge-open.mp4`),
       // 第二套视频是 720 x 964，尺寸、比例、位置全部独立维护。
       anchor: { x: "21%", y: "1.3%" },
       width: "70.5%",

@@ -69,7 +69,8 @@ export class ObjectStorageService {
   }
 
   async getImage(key: string) {
-    if (!key || key.includes('..') || !key.startsWith('recipes/')) throw new BadRequestException('图片路径无效')
+    const isAllowedKey = Boolean(key) && (key.startsWith('recipes/') || key.startsWith('recipe-assets/ingredients/'))
+    if (!key || key.includes('..') || !isAllowedKey) throw new BadRequestException('图片路径无效')
     return this.getClient().send(new GetObjectCommand({ Bucket: this.getBucket(), Key: key }))
   }
 
