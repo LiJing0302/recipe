@@ -55,14 +55,14 @@ const load = async () => {
 }
 
 const selectCategory = (name: string) => { activeCategory.value = name }
-const openRecipe = (id: string) => uni.navigateTo({ url: `/pages/recipe/detail?id=${encodeURIComponent(id)}&shareId=${encodeURIComponent(shareId.value)}` })
+const openRecipe = (id: string) => uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${encodeURIComponent(id)}&shareId=${encodeURIComponent(shareId.value)}` })
 
 onLoad((options) => {
   shareId.value = String(options?.shareId || '')
   uni.setNavigationBarTitle({ title: '分享食谱' })
   void load()
 })
-onShareAppMessage(() => ({ title: pageTitle.value, path: `/pages/shared-recipes/index?shareId=${encodeURIComponent(shareId.value)}` }))
+onShareAppMessage(() => ({ title: pageTitle.value, path: `/pages-sub/shared-recipes/index?shareId=${encodeURIComponent(shareId.value)}` }))
 </script>
 
 <template>

@@ -61,4 +61,5 @@ $u-light-color: #cbb8a8;
 $u-border-color: $line-strong;
 $u-disabled-color: #d8c8ba;
 
-@import 'uview-plus/index.scss';
+// 只在 uni.scss 提供主题变量。完整 uView 样式放到 App.vue，避免被复制到每个页面。
+@import 'uview-plus/theme.scss';

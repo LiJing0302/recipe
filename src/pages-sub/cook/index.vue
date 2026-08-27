@@ -2,7 +2,7 @@
 import { onLoad } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import StepChecklist from '@/components/StepChecklist.vue'
-import { chatCookingAssistant } from '@/services/ai'
+import { chatCookingAssistant } from '@/pages-sub/services/ai'
 import { completeCooking } from '@/services/cooking'
 import { fetchRecipe, getRecipeDetail } from '@/services/recipe'
 import type { CookingAssistantResult, Recipe } from '@/types'

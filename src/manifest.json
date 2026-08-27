@@ -7,12 +7,14 @@
   "transformPx": false,
   "mp-weixin": {
     "appid": "",
+    "lazyCodeLoading": "requiredComponents",
     "setting": {
       "urlCheck": false,
       "es6": true,
       "minified": true,
       "postcss": true,
-      "minifyWXSS": true
+      "minifyWXSS": true,
+      "lazyCodeLoading": "requiredComponents"
     },
     "usingComponents": true
   }

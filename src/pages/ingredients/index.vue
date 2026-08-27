@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { onHide, onShow } from '@dcloudio/uni-app'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
 import { INGREDIENTS_KITCHEN_CONFIG, kitchenZoneConfigs } from '@/config/ingredients-kitchen'
 import { addInventoryBatch, getFreshness, getInventoryBatches, loadInventoryBatches, updateInventoryBatch } from '@/services/inventory'
 import { filterInventoryByZone, groupInventoryBatches, type IngredientGroup, type InventoryZone } from '@/services/inventory-view'
+import { hideFloatingTabBar, showFloatingTabBar } from '@/services/tabbar'
+import { withLoginRequired } from '@/services/auth-guard'
 import type { IngredientInventoryBatch } from '@/types'
 
+const props = defineProps<{ active: boolean }>()
+
 const batches = ref<IngredientInventoryBatch[]>([])
+const loaded = ref(false)
 const formOpen = ref(false)
 const editingBatch = ref<IngredientInventoryBatch>()
 type FridgeInteraction = 'idle' | 'opening' | 'opened' | 'closing'
@@ -62,11 +66,11 @@ const zoneStats = computed<Record<InventoryZone, ZoneStats>>(() => {
 })
 const getZoneStats = (zone: InventoryZone) => zoneStats.value[zone]
 const fridgeGroups = computed(() => getZoneStats('fridge').groups)
-const load = async () => { await loadInventoryBatches(); batches.value = [...getInventoryBatches()] }
-const openAdd = () => { editingBatch.value = undefined; formOpen.value = true }
+const load = async () => { await loadInventoryBatches(); batches.value = [...getInventoryBatches()]; loaded.value = true }
+const openAdd = withLoginRequired(() => { editingBatch.value = undefined; formOpen.value = true })
 const closeForm = () => { formOpen.value = false; editingBatch.value = undefined }
-const openCategories = () => uni.navigateTo({ url: '/pages/ingredients/categories' })
-const openZone = (zone: InventoryZone) => uni.navigateTo({ url: `/pages/ingredients/storage?zone=${zone}` })
+const openCategories = withLoginRequired(() => uni.navigateTo({ url: '/pages-sub/ingredients/categories' }))
+const openZone = withLoginRequired((zone: InventoryZone) => uni.navigateTo({ url: `/pages-sub/ingredients/storage?zone=${zone}` }))
 const resetFridgeAnimation = () => {
 	if (fridgeReverseTimer) clearInterval(fridgeReverseTimer)
 	fridgeReverseTimer = null
@@ -74,7 +78,7 @@ const resetFridgeAnimation = () => {
 	fridgeVideoContext = null
 	fridgeVideoActive.value = false
 	fridgeInteraction.value = 'idle'
-	uni.showTabBar({ animation: false })
+	showFloatingTabBar()
 }
 const closeFridgeAnimation = () => {
 	if (fridgeInteraction.value === 'idle' || fridgeInteraction.value === 'closing') return
@@ -98,6 +102,7 @@ const closeFridgeAnimation = () => {
 	}, kitchenConfig.fridgeReverse.tickMs)
 }
 const startFridgeVideo = () => {
+	hideFloatingTabBar()
 	fridgeVideoContext = uni.createVideoContext('fridge-open-video')
 	fridgeVideoActive.value = true
 	fridgeVideoCurrentTime = 0
@@ -105,11 +110,11 @@ const startFridgeVideo = () => {
 	fridgeVideoContext?.playbackRate(kitchenConfig.fridgeVideo.playbackRate)
 	fridgeVideoContext.play()
 }
-const openFridge = () => {
+const openFridge = withLoginRequired(() => {
 	if (fridgeInteraction.value !== 'idle') return
 	fridgeInteraction.value = 'opening'
 	nextTick(startFridgeVideo)
-}
+})
 const handleFridgeVideoTimeUpdate = (event: { detail?: { currentTime?: number; duration?: number } }) => {
 	const currentTime = event.detail?.currentTime
 	const duration = event.detail?.duration
@@ -140,8 +145,16 @@ const saveForm = async (draft: InventoryBatchDraft) => {
 		uni.showToast({ title: isEditing ? '批次已更新' : '食材已加入库中', icon: 'success' })
 	} catch (error) { uni.showToast({ title: error instanceof Error ? error.message : '保存失败，请检查服务连接', icon: 'none' }) }
 }
-onShow(() => { setPageScrollLock(true); uni.showTabBar({ animation: false }); load() })
-onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
+watch(() => props.active, (active) => {
+	setPageScrollLock(active)
+	if (active) {
+		showFloatingTabBar()
+		if (!loaded.value) void load()
+	} else {
+		resetFridgeAnimation()
+	}
+}, { immediate: true })
+defineExpose({ refresh: load })
 </script>
 
 <template>
@@ -160,23 +173,24 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 							mode="scaleToFill" />
 					</view>
 					<view class="kitchen-main-region">
-						<image class="kitchen-main-image" :src="kitchenConfig.background.main.src"
-							mode="scaleToFill" />
+						<image class="kitchen-main-image" :src="kitchenConfig.background.main.src" mode="scaleToFill" />
 						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle'" id="fridge-open-video"
 							class="fridge-animation-video" :src="kitchenConfig.fridgeVideo.src" :autoplay="false"
 							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
 							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-								:object-fit="kitchenConfig.fridgeVideo.objectFit" :object-position="kitchenConfig.fridgeVideo.objectPosition"
-								muted playsinline @timeupdate="handleFridgeVideoTimeUpdate"
-							@ended="handleFridgeVideoEnded"
+							:object-fit="kitchenConfig.fridgeVideo.objectFit"
+							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+							@timeupdate="handleFridgeVideoTimeUpdate" @ended="handleFridgeVideoEnded"
 							@error="handleFridgeVideoError" />
 						<view class="main-overlay">
 							<view v-for="zone in kitchenZones" :key="zone.key" class="scene-hotspot"
-								:style="getZoneHotspotStyle(zone)" :aria-label="zone.ariaLabel" @click="handleZoneClick(zone.key)">
+								:style="getZoneHotspotStyle(zone)" :aria-label="zone.ariaLabel"
+								@click="handleZoneClick(zone.key)">
 								<view class="zone-panel">
 									<view class="zone-heading"><text class="zone-code">{{ zone.code }}</text><text
-										class="zone-name">{{ zone.name }}</text></view>
-									<view class="zone-count"><text>{{ getZoneStats(zone.key).groups.length }}</text><text>种食材</text>
+											class="zone-name">{{ zone.name }}</text></view>
+									<view class="zone-count"><text>{{ getZoneStats(zone.key).groups.length
+											}}</text><text>种食材</text>
 									</view>
 									<view class="zone-status">
 										<view class="status-item fresh">
@@ -248,7 +262,8 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 
 <style scoped>
 .kitchen-page {
-	height: calc(100vh - var(--window-bottom));
+	/* 使用统一原生导航栏后，厨房画布从 header 下方开始计算高度。 */
+	height: calc(100vh - var(--window-top) - var(--window-bottom));
 	min-height: 0;
 	padding: 0;
 	overflow: hidden;
@@ -262,6 +277,7 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	overflow: hidden;
 	background: var(--kitchen-bg-color);
 }
+
 .kitchen-media-canvas {
 	position: absolute;
 	inset: 0;
@@ -363,15 +379,16 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 .scene-overlay {
 	position: absolute;
 	inset: 0;
-	z-index: 4;
+	z-index: 10;
 	pointer-events: none;
 }
 
 .scene-topbar {
 	position: absolute;
-	top: 2.4%;
+	top: 12rpx;
 	left: 4%;
 	right: 4%;
+	min-height: 84rpx;
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
@@ -594,6 +611,7 @@ onHide(() => { setPageScrollLock(false); resetFridgeAnimation() })
 	background: transparent;
 	pointer-events: auto;
 }
+
 .fridge-animation-video {
 	/* 变量来自 src/config/ingredients-kitchen.ts，坐标系是主体画布。 */
 	position: absolute;

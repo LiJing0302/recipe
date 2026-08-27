@@ -1,6 +1,7 @@
 export type RecipeSource = 'official' | 'user' | 'douguo' | 'community'
 export type IngredientMatchMethod = 'exact' | 'alias' | 'ai' | 'manual'
 export type RecipeDifficulty = '简单' | '中等' | '进阶'
+export type RecipeProcess = '炒' | '煎' | '炸' | '蒸' | '煮' | '炖' | '焖' | '烤' | '卤' | '拌' | '腌' | '烘焙' | '免烹饪' | '其他'
 export type IngredientAmountType = 'fixed' | 'range' | 'qualitative'
 export type IngredientBaseUnit = 'g' | 'ml' | 'count'
 
@@ -114,9 +115,10 @@ export interface Recipe {
   steps: RecipeStep[]
   tags: string[]
   flavor: string
-  servings: number
-  duration: number
-  difficulty: RecipeDifficulty
+  process?: RecipeProcess
+  servings?: number
+  duration?: number
+  difficulty?: RecipeDifficulty
   rating: number
   ratingCount: number
   favoriteCount?: number

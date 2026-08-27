@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { RECIPE_PROCESSES } from '@/constants/recipes'
 import { enrichIngredient, amountInputValue, parseIngredientAmount } from '@/services/ingredient-matching'
 import { getIngredientUnitOptions } from '@/services/ingredient-config'
 import { createRecipeRemote, fetchMyRecipeCategories, fetchRecipe, getRecipeDetail, updateRecipeRemote } from '@/services/recipe'
 import { uploadImage } from '@/services/api'
 import { getCurrentUser } from '@/services/storage'
 import IngredientPicker from '@/components/IngredientPicker.vue'
-import type { Ingredient, Recipe, RecipeStep, UserRecipeCategory } from '@/types'
+import type { Ingredient, Recipe, RecipeDifficulty, RecipeProcess, RecipeStep, UserRecipeCategory } from '@/types'
 
 type EditorMode = 'create' | 'edit'
 type FormState = {
@@ -18,6 +19,7 @@ type FormState = {
   servings: string
   duration: string
   difficulty: Recipe['difficulty'] | ''
+  process: RecipeProcess | ''
   tags: string
   categories: string[]
   isPublic: boolean
@@ -25,14 +27,15 @@ type FormState = {
 
 const props = withDefaults(defineProps<{ mode: EditorMode; recipeId?: string }>(), { recipeId: '' })
 const emit = defineEmits<{ saved: [recipe: Recipe] }>()
-const difficulties: Recipe['difficulty'][] = ['简单', '中等', '进阶']
+const difficulties: RecipeDifficulty[] = ['简单', '中等', '进阶']
+const processes = RECIPE_PROCESSES as readonly RecipeProcess[]
 const user = getCurrentUser()
 const loading = ref(false)
 const uploading = ref(false)
 const editingRecipe = ref<Recipe>()
 const recipeCategories = ref<UserRecipeCategory[]>([])
 const selectableCategories = computed(() => recipeCategories.value.filter((category) => category.id !== 'uncategorized' && category.name !== '未分类'))
-const form = reactive<FormState>({ title: '', subtitle: '', cover: '', flavor: '', servings: '', duration: '', difficulty: '', tags: '', categories: [], isPublic: false })
+const form = reactive<FormState>({ title: '', subtitle: '', cover: '', flavor: '', servings: '', duration: '', difficulty: '', process: '', tags: '', categories: [], isPublic: false })
 const ingredients = ref<Ingredient[]>([])
 const steps = ref<RecipeStep[]>([])
 const amountDrafts = reactive<Record<string, string>>({})
@@ -44,7 +47,7 @@ const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().to
 const emptyIngredient = (): Ingredient => ({ id: createId('ingredient'), name: '', amount: { raw: '', type: 'qualitative', conversion: 'none' } })
 const emptyStep = (): RecipeStep => ({ id: createId('step'), title: '', description: '', images: [] })
 const resetForm = () => {
-  Object.assign(form, { title: '', subtitle: '', cover: '', flavor: '', servings: '', duration: '', difficulty: '', tags: '', categories: [], isPublic: false })
+  Object.assign(form, { title: '', subtitle: '', cover: '', flavor: '', servings: '', duration: '', difficulty: '', process: '', tags: '', categories: [], isPublic: false })
   Object.keys(amountDrafts).forEach((key) => delete amountDrafts[key])
   const firstIngredient = emptyIngredient()
   amountDrafts[firstIngredient.id] = ''
@@ -56,7 +59,7 @@ const resetForm = () => {
 const fillRecipe = (recipe: Recipe) => {
   editingRecipe.value = recipe
   const availableCategories = new Set(selectableCategories.value.map((category) => category.name))
-  Object.assign(form, { title: recipe.title, subtitle: recipe.subtitle, cover: recipe.cover, flavor: recipe.flavor, servings: String(recipe.servings), duration: String(recipe.duration), difficulty: recipe.difficulty, tags: recipe.tags.join(', '), categories: (recipe.categories || []).filter((category) => availableCategories.has(category)).slice(0, 1), isPublic: recipe.isPublic })
+  Object.assign(form, { title: recipe.title, subtitle: recipe.subtitle, cover: recipe.cover, flavor: recipe.flavor, servings: recipe.servings === undefined ? '' : String(recipe.servings), duration: recipe.duration === undefined ? '' : String(recipe.duration), difficulty: recipe.difficulty || '', process: recipe.process || '', tags: recipe.tags.join(', '), categories: (recipe.categories || []).filter((category) => availableCategories.has(category)).slice(0, 1), isPublic: recipe.isPublic })
   ingredients.value = recipe.ingredients.map((item) => {
     const normalized = enrichIngredient(item)
     amountDrafts[normalized.id] = amountInputValue(normalized.amount)
@@ -108,9 +111,16 @@ const toggleCategory = (category: string) => { form.categories = form.categories
 const difficultyPickerOpen = ref(false)
 const openDifficultyPicker = () => { difficultyPickerOpen.value = true }
 const closeDifficultyPicker = () => { difficultyPickerOpen.value = false }
-const selectDifficulty = (difficulty: Recipe['difficulty']) => {
+const selectDifficulty = (difficulty: RecipeDifficulty | '') => {
   form.difficulty = difficulty
   closeDifficultyPicker()
+}
+const processPickerOpen = ref(false)
+const openProcessPicker = () => { processPickerOpen.value = true }
+const closeProcessPicker = () => { processPickerOpen.value = false }
+const selectProcess = (process: RecipeProcess) => {
+  form.process = process
+  closeProcessPicker()
 }
 
 /* 食材选择：底部弹窗点选（公共食材目录），选中后自动带出该食材的单位与默认分量 */
@@ -141,6 +151,11 @@ const ingredientUnitIndex = (ingredient: Ingredient) => Math.max(0, ingredientUn
 const changeIngredientUnit = (ingredient: Ingredient, index: string | number) => {
   const options = ingredientUnitOptions(ingredient)
   const unit = options[Number(index)] || 'g'
+  if (unit === '适量') {
+    amountDrafts[ingredient.id] = '适量'
+    ingredient.amount = parseIngredientAmount('适量', ingredient.name, unit)
+    return
+  }
   const draft = amountDrafts[ingredient.id] || ingredient.amount.raw || '1'
   ingredient.amount = parseIngredientAmount(draft, ingredient.name, unit)
 }
@@ -195,12 +210,12 @@ const removeStepImage = (step: RecipeStep, index: number) => {
 
 const save = async () => {
   if (!form.title.trim()) return uni.showToast({ title: '请填写食谱名称', icon: 'none' })
-  if (!form.difficulty) return uni.showToast({ title: '请选择难度', icon: 'none' })
+  if (!form.process) return uni.showToast({ title: '请选择制作工艺', icon: 'none' })
   if (!form.categories.length) return uni.showToast({ title: '请选择菜谱分类', icon: 'none' })
-  const servings = Number(form.servings)
-  const duration = Number(form.duration)
-  if (!Number.isInteger(servings) || servings < 1) return uni.showToast({ title: '请填写有效的份量', icon: 'none' })
-  if (!Number.isInteger(duration) || duration < 1) return uni.showToast({ title: '请填写有效的时长', icon: 'none' })
+  const servings = form.servings.trim() ? Number(form.servings) : undefined
+  const duration = form.duration.trim() ? Number(form.duration) : undefined
+  if (servings !== undefined && (!Number.isInteger(servings) || servings < 1)) return uni.showToast({ title: '请填写有效的份量', icon: 'none' })
+  if (duration !== undefined && (!Number.isInteger(duration) || duration < 1)) return uni.showToast({ title: '请填写有效的时长', icon: 'none' })
   const recipeIngredients = ingredients.value.filter((item) => item.name.trim()).map((item) => {
     const name = item.name.trim()
     const parsed = parseIngredientAmount(amountDrafts[item.id] || item.amount.raw, name, item.amount.unit)
@@ -208,7 +223,7 @@ const save = async () => {
     const preserveSourceConversion = item.amount.sourceConversion && parsed.unit === item.amount.sourceConversion.unit
     return enrichIngredient({ ...item, name, amount: { ...parsed, raw, ...(preserveSourceConversion ? { sourceConversion: item.amount.sourceConversion } : {}) } })
   })
-  const recipeSteps = steps.value.filter((item) => item.title.trim() && item.description.trim()).map((item) => ({ ...item, title: item.title.trim(), description: item.description.trim(), duration: item.duration, images: stepImages(item) }))
+  const recipeSteps = steps.value.filter((item) => item.description.trim()).map((item, index) => ({ ...item, title: item.title.trim() || `步骤 ${index + 1}`, description: item.description.trim(), tip: item.tip?.trim() || undefined, duration: item.duration, images: stepImages(item) }))
   if (!recipeIngredients.length) return uni.showToast({ title: '请至少添加一项食材', icon: 'none' })
   if (!recipeSteps.length) return uni.showToast({ title: '请至少填写一步做法', icon: 'none' })
 
@@ -227,9 +242,10 @@ const save = async () => {
     categories: form.categories,
     tags: form.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
     flavor: form.flavor.trim(),
+    process: form.process,
     servings,
     duration,
-    difficulty: form.difficulty,
+    difficulty: form.difficulty || undefined,
     rating: previous?.rating ?? 0,
     ratingCount: previous?.ratingCount ?? 0,
     cookingCount: previous?.cookingCount ?? 0,
@@ -256,18 +272,25 @@ const save = async () => {
     <view class="field-block"><text class="field-label">一句话描述</text><input v-model="form.subtitle" class="text-input" placeholder="可选，介绍这道菜的特点" /></view>
     <view class="category-section"><view class="section-row"><text class="field-label category-label">菜谱分类</text><text class="category-count">{{ form.categories.length ? form.categories[0] : '必选' }}</text></view><view v-if="selectableCategories.length" class="category-options"><text v-for="category in selectableCategories" :key="category.id" class="category-option" :class="{ active: form.categories.includes(category.name) }" @click="toggleCategory(category.name)">{{ category.name }}</text></view><text v-else class="category-empty">暂无可用分类，请先检查网络连接</text></view>
     <view class="field-block cover-block"><view class="section-row"><text class="field-label">主图</text><text class="add-link" @click="chooseCover">上传主图</text></view><view class="cover-picker" @click="chooseCover"><image v-if="form.cover" :src="form.cover" mode="aspectFill" /><view v-else class="cover-placeholder">可选，上传一道菜的主图</view></view></view>
+    <view class="field-block"><text class="field-label">制作工艺</text><view class="select-input" @click="openProcessPicker"><text>{{ form.process || '请选择制作工艺' }}</text><text>⌄</text></view></view>
     <view class="field-grid"><view class="field-block"><text class="field-label">口味</text><input v-model="form.flavor" class="text-input" placeholder="可选，如酸甜、咸鲜" /></view><view class="field-block"><text class="field-label">难度</text><view class="select-input" @click="openDifficultyPicker"><text>{{ form.difficulty || '请选择难度' }}</text><text>⌄</text></view></view></view>
-    <view class="field-grid"><view class="field-block"><text class="field-label">几人份</text><input v-model="form.servings" type="number" class="text-input" placeholder="填写份量" /></view><view class="field-block"><text class="field-label">预计时长（分钟）</text><input v-model="form.duration" type="number" class="text-input" placeholder="填写时长" /></view></view>
+    <view class="field-grid"><view class="field-block"><text class="field-label">几人份（可选）</text><input v-model="form.servings" type="number" class="text-input" placeholder="可选" /></view><view class="field-block"><text class="field-label">预计时长（分钟，可选）</text><input v-model="form.duration" type="number" class="text-input" placeholder="可选" /></view></view>
     <view class="form-section"><view class="section-row"><text class="section-title">食材</text><text class="add-link" @click="addIngredient">+ 添加食材</text></view><view v-for="ingredient in ingredients" :key="ingredient.id" class="ingredient-line"><view class="line-form"><view class="ingredient-name-field" :class="{ 'is-empty': !ingredient.name }" @click="openIngredientPicker(ingredient)"><text>{{ ingredient.name || '选择食材' }}</text><AppIcon name="chevron-right" size="sm" /></view><view class="amount-field"><input v-model="amountDrafts[ingredient.id]" type="text" placeholder="如：半、1/2、适量" @blur="ingredient.amount = parseIngredientAmount(amountDrafts[ingredient.id], ingredient.name, ingredient.amount.unit)" /><view v-if="ingredient.name" class="amount-unit-picker" @click="openUnitPicker(ingredient)">{{ ingredient.amount.unit || 'g' }}<text class="unit-chevron">⌄</text></view><text v-else class="amount-unit">g</text></view></view></view></view>
     <IngredientPicker :open="pickerOpen" @close="pickerOpen = false" @select="handleSelectIngredient" />
     <up-popup :show="difficultyPickerOpen" custom-class="popup-static" mode="center" :round="24" @close="closeDifficultyPicker">
       <view class="difficulty-modal" @click.stop>
         <view class="difficulty-header"><view><text class="difficulty-eyebrow">RECIPE SETTINGS</text><text class="difficulty-title">选择难度</text><text class="difficulty-desc">根据准备和烹饪复杂度选择</text></view><view class="difficulty-close" @click="closeDifficultyPicker"><AppIcon name="close" size="md" /></view></view>
-        <view class="difficulty-options"><view v-for="difficulty in difficulties" :key="difficulty" class="difficulty-option" :class="{ active: form.difficulty === difficulty }" @click="selectDifficulty(difficulty)"><text>{{ difficulty }}</text><text v-if="form.difficulty === difficulty" class="difficulty-check">✓</text></view></view>
+        <view class="difficulty-options"><view class="difficulty-option" :class="{ active: !form.difficulty }" @click="selectDifficulty('')"><text>暂不设置</text><text v-if="!form.difficulty" class="difficulty-check">✓</text></view><view v-for="difficulty in difficulties" :key="difficulty" class="difficulty-option" :class="{ active: form.difficulty === difficulty }" @click="selectDifficulty(difficulty)"><text>{{ difficulty }}</text><text v-if="form.difficulty === difficulty" class="difficulty-check">✓</text></view></view>
+      </view>
+    </up-popup>
+    <up-popup :show="processPickerOpen" custom-class="popup-static" mode="center" :round="24" @close="closeProcessPicker">
+      <view class="difficulty-modal" @click.stop>
+        <view class="difficulty-header"><view><text class="difficulty-eyebrow">RECIPE METHOD</text><text class="difficulty-title">选择制作工艺</text><text class="difficulty-desc">使用系统维护的工艺分类，便于后续查找</text></view><view class="difficulty-close" @click="closeProcessPicker"><AppIcon name="close" size="md" /></view></view>
+        <view class="difficulty-options"><view v-for="process in processes" :key="process" class="difficulty-option" :class="{ active: form.process === process }" @click="selectProcess(process)"><text>{{ process }}</text><text v-if="form.process === process" class="difficulty-check">✓</text></view></view>
       </view>
     </up-popup>
     <up-picker v-if="unitPickerTarget" :show="unitPickerOpen" :columns="[ingredientUnitOptions(unitPickerTarget)]" :default-index="[ingredientUnitIndex(unitPickerTarget)]" title="选择计量单位" cancel-color="#a29388" confirm-color="#c93d20" :round="24" @close="closeUnitPicker" @cancel="closeUnitPicker" @confirm="confirmUnitPicker" />
-    <view class="form-section"><view class="section-row"><text class="section-title">步骤</text><text class="add-link" @click="addStep">+ 添加步骤</text></view><view v-for="(step, index) in steps" :key="step.id" class="step-form"><text class="step-form-index">{{ index + 1 }}</text><view class="step-form-fields"><input v-model="step.title" placeholder="步骤标题" /><textarea v-model="step.description" placeholder="写下具体做法和注意事项" /><view class="step-image-toolbar"><text class="step-image-label">步骤图片</text><text class="add-link" @click.stop="chooseStepImages(step)">+ 添加图片</text></view><view v-if="stepImages(step).length" class="step-image-grid"><view v-for="(image, imageIndex) in stepImages(step)" :key="image + imageIndex" class="step-image-item"><image :src="image" mode="aspectFill" /><text @click.stop="removeStepImage(step, imageIndex)">删除</text></view></view></view></view></view>
+    <view class="form-section"><view class="section-row"><text class="section-title">步骤</text><text class="add-link" @click="addStep">+ 添加步骤</text></view><view v-for="(step, index) in steps" :key="step.id" class="step-form"><text class="step-form-index">{{ index + 1 }}</text><view class="step-form-fields"><textarea v-model="step.description" class="step-content-input" placeholder="步骤内容：写下具体做法" /><input v-model="step.tip" class="step-tip-input" placeholder="小贴士（可选）" /><view class="step-image-toolbar"><text class="step-image-label">步骤图片</text><text class="add-link" @click.stop="chooseStepImages(step)">+ 添加图片</text></view><view v-if="stepImages(step).length" class="step-image-grid"><view v-for="(image, imageIndex) in stepImages(step)" :key="image + imageIndex" class="step-image-item"><image :src="image" mode="aspectFill" /><text @click.stop="removeStepImage(step, imageIndex)">删除</text></view></view></view></view></view>
     <text v-if="uploading" class="uploading-text">图片上传中...</text>
     <view class="public-row"><view><text class="public-title">公开到社区</text><text class="caption">让更多人发现你的拿手菜</text></view><switch :checked="form.isPublic" color="#c93d20" @change="form.isPublic = $event.detail.value" /></view>
     <button class="primary-button save-button" @click="save">保存食谱</button>
@@ -327,8 +350,8 @@ const save = async () => {
 .step-form-index { display: flex; align-items: center; justify-content: center; flex: 0 0 44rpx; width: 44rpx; height: 44rpx; border-radius: 50%; background: #dceadd; color: #c93d20; font-size: 22rpx; }
 .step-form-fields { flex: 1; }
 .step-form-fields input, .step-form-fields textarea { width: 100%; padding: 16rpx; border-radius: 12rpx; background: #fff; color: #34473f; font-size: 24rpx; box-sizing: border-box; }
-.step-form-fields input { height: 78rpx; line-height: 46rpx; }
-.step-form-fields textarea { height: 120rpx; margin-top: 12rpx; line-height: 1.5; }
+.step-content-input { height: 120rpx; margin-top: 0 !important; line-height: 1.5; }
+.step-tip-input { height: 78rpx; margin-top: 12rpx; line-height: 46rpx; }
 .step-image-toolbar { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
 .step-image-label { color: #6f7d73; font-size: 22rpx; }
 .step-image-grid { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 12rpx; }

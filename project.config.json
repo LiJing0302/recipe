@@ -3,6 +3,7 @@
     "es6": true,
     "postcss": true,
     "minified": true,
+    "lazyCodeLoading": "requiredComponents",
     "uglifyFileName": false,
     "enhance": true,
     "packNpmRelationList": [],

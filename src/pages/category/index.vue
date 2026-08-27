@@ -44,7 +44,7 @@ const load = async () => {
 }
 
 const selectCategory = (name: string) => { activeCategory.value = name }
-const openRecipe = (id: string) => uni.navigateTo({ url: `/pages/recipe/detail?id=${id}` })
+const openRecipe = (id: string) => uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${id}` })
 
 onShow(() => {
   if (!allRecipes.value.length && !categoryLoading.value) load()

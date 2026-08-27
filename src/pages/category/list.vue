@@ -45,7 +45,7 @@ const decodeTag = (value: unknown) => {
   try { return decodeURIComponent(text) } catch { return text }
 }
 
-const openRecipe = (id: string) => uni.navigateTo({ url: `/pages/recipe/detail?id=${id}` })
+const openRecipe = (id: string) => uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${id}` })
 const collect = async (id: string) => {
   try { collected.value[id] = await toggleCollection(id) } catch { uni.showToast({ title: '收藏操作失败，请检查服务连接', icon: 'none' }); return }
   uni.showToast({ title: collected.value[id] ? '已加入我的食谱' : '已取消收藏', icon: 'none' })

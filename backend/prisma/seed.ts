@@ -67,6 +67,7 @@ const communityRecipes = [
     categories: ['荤菜主菜'],
     tags: ['家常菜', '下饭菜'],
     flavor: '酸甜',
+    process: '炖',
     servings: 3,
     duration: 70,
     difficulty: '中等',
@@ -100,6 +101,7 @@ const communityRecipes = [
     categories: ['素菜家常'],
     tags: ['快手菜', '低脂'],
     flavor: '咸鲜',
+    process: '炒',
     servings: 2,
     duration: 15,
     difficulty: '简单',
@@ -130,6 +132,7 @@ const communityRecipes = [
     categories: ['米面主食'],
     tags: ['一锅端', '晚餐'],
     flavor: '咸鲜',
+    process: '焖',
     servings: 2,
     duration: 45,
     difficulty: '简单',
@@ -162,6 +165,7 @@ const communityRecipes = [
     categories: ['汤粥煲汤'],
     tags: ['早餐', '养胃'],
     flavor: '清淡',
+    process: '煮',
     servings: 3,
     duration: 35,
     difficulty: '简单',
@@ -190,6 +194,7 @@ const communityRecipes = [
     categories: ['荤菜主菜'],
     tags: ['测试数据', '食材映射'],
     flavor: '酸辣',
+    process: '煎',
     servings: 2,
     duration: 35,
     difficulty: '中等',
@@ -219,6 +224,7 @@ const communityRecipes = [
     categories: ['素菜家常'],
     tags: ['测试数据', '单位映射'],
     flavor: '咸鲜',
+    process: '煎',
     servings: 2,
     duration: 25,
     difficulty: '简单',
@@ -248,6 +254,7 @@ const communityRecipes = [
     categories: ['米面主食'],
     tags: ['测试数据', '别名匹配'],
     flavor: '香辣',
+    process: '拌',
     servings: 2,
     duration: 20,
     difficulty: '简单',
@@ -305,7 +312,7 @@ async function main() {
   for (const recipe of communityRecipes) {
     await prisma.recipe.upsert({
       where: { id: recipe.id },
-      update: recipe,
+      update: { ...recipe, isPublic: true },
       create: { ...recipe, isPublic: true, source: 'user' }
     })
   }

@@ -95,7 +95,7 @@ export class RecipesService {
   }
 
   async listCategories() {
-    return this.prisma.$queryRaw<Array<{ name: string; count: number }>>`
+    const rows = await this.prisma.$queryRaw<Array<{ name: string; count: number }>>`
       SELECT category AS name, COUNT(*)::int AS count
       FROM "Recipe", unnest("categories") AS category
       WHERE "isPublic" = true AND category <> ''
@@ -112,6 +112,8 @@ export class RecipesService {
         ELSE 99
       END
     `
+    const counts = new Map(rows.map((row) => [row.name, Number(row.count)]))
+    return FAMILY_CATEGORIES.map((name) => ({ name, count: counts.get(name) || 0 }))
   }
 
   async listMineCategories(userId: string) {
@@ -243,6 +245,7 @@ export class RecipesService {
             categories,
             tags: origin.tags,
             flavor: origin.flavor,
+            process: origin.process,
             servings: origin.servings,
             duration: origin.duration,
             difficulty: origin.difficulty,
@@ -360,7 +363,7 @@ export class RecipesService {
     return createHash('sha256').update(process.env.SHARE_SECRET || process.env.AUTH_SECRET || 'recipe-ai-development-secret').digest()
   }
 
-  private async recipeFields(input: CreateRecipeDto, userId: string): Promise<Pick<Prisma.RecipeCreateInput, 'title' | 'subtitle' | 'cover' | 'source' | 'categories' | 'tags' | 'flavor' | 'servings' | 'duration' | 'difficulty' | 'isPublic' | 'ingredients' | 'steps'>> {
+  private async recipeFields(input: CreateRecipeDto, userId: string): Promise<Pick<Prisma.RecipeCreateInput, 'title' | 'subtitle' | 'cover' | 'source' | 'categories' | 'tags' | 'flavor' | 'process' | 'servings' | 'duration' | 'difficulty' | 'isPublic' | 'ingredients' | 'steps'>> {
     const userCategories = await this.prisma.recipeCategory.findMany({ where: { userId }, select: { name: true } })
     const validNames = new Set(userCategories.map((category) => category.name))
     const categories = [...new Set(input.categories.map((category) => category.trim()).filter((category) => validNames.has(category)))].slice(0, 1)
@@ -372,9 +375,10 @@ export class RecipesService {
       categories,
       tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
       flavor: input.flavor.trim(),
-      servings: input.servings,
-      duration: input.duration,
-      difficulty: input.difficulty,
+      process: input.process.trim(),
+      servings: input.servings ?? null,
+      duration: input.duration ?? null,
+      difficulty: input.difficulty ?? null,
       isPublic: input.isPublic,
       ingredients: this.ingredientData(input) as unknown as Prisma.InputJsonValue,
       steps: this.stepData(input)
@@ -419,9 +423,10 @@ export class RecipesService {
       steps: this.readSteps(recipe.steps),
       tags: recipe.tags,
       flavor: recipe.flavor,
-      servings: recipe.servings,
-      duration: recipe.duration,
-      difficulty: recipe.difficulty,
+      process: recipe.process ?? undefined,
+      servings: recipe.servings ?? undefined,
+      duration: recipe.duration ?? undefined,
+      difficulty: recipe.difficulty ?? undefined,
       rating: recipe.rating,
       ratingCount: recipe.ratingCount,
       cookingCount: recipe.cookingCount,
@@ -446,9 +451,10 @@ export class RecipesService {
       steps: [],
       tags: recipe.tags,
       flavor: recipe.flavor,
-      servings: recipe.servings,
-      duration: recipe.duration,
-      difficulty: recipe.difficulty,
+      process: recipe.process ?? undefined,
+      servings: recipe.servings ?? undefined,
+      duration: recipe.duration ?? undefined,
+      difficulty: recipe.difficulty ?? undefined,
       rating: recipe.rating,
       ratingCount: recipe.ratingCount,
       cookingCount: recipe.cookingCount,

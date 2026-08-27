@@ -3,7 +3,7 @@ import type { BasketPendingItem, CookingRecord, DatabaseSchema, IngredientInvent
 import { clearAuthSession, getAuthToken } from './storage'
 import type { IngredientMappingPayload } from './ingredient-matching'
 
-type RecipePayload = Omit<Pick<Recipe, 'title' | 'subtitle' | 'cover' | 'categories' | 'ingredients' | 'steps' | 'tags' | 'flavor' | 'servings' | 'duration' | 'difficulty' | 'isPublic'>, 'subtitle' | 'cover' | 'categories'> & { subtitle?: string; cover?: string; categories: string[] }
+type RecipePayload = Omit<Pick<Recipe, 'title' | 'subtitle' | 'cover' | 'categories' | 'ingredients' | 'steps' | 'tags' | 'flavor' | 'process' | 'servings' | 'duration' | 'difficulty' | 'isPublic'>, 'subtitle' | 'cover' | 'categories'> & { subtitle?: string; cover?: string; categories: string[] }
 
 export interface UploadedImage {
   key: string
@@ -105,9 +105,10 @@ const toPayload = (recipe: Recipe): RecipePayload => ({
   steps: recipe.steps,
   tags: recipe.tags,
   flavor: recipe.flavor,
-  servings: recipe.servings,
-  duration: recipe.duration,
-  difficulty: recipe.difficulty,
+  ...(recipe.process ? { process: recipe.process } : {}),
+  ...(recipe.servings === undefined ? {} : { servings: recipe.servings }),
+  ...(recipe.duration === undefined ? {} : { duration: recipe.duration }),
+  ...(recipe.difficulty ? { difficulty: recipe.difficulty } : {}),
   isPublic: recipe.isPublic
 })
 

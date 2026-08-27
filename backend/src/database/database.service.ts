@@ -36,6 +36,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   'Recipe.authorId': '创建者用户 ID',
   'Recipe.tags': '菜谱标签数组',
   'Recipe.flavor': '菜品口味',
+  'Recipe.process': '制作工艺，使用系统维护的工艺选项',
   'Recipe.servings': '适用人数',
   'Recipe.duration': '预计制作时长，单位为分钟',
   'Recipe.difficulty': '制作难度',

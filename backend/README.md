@@ -1,16 +1,37 @@
 # Recipe AI Backend
 
+## Environment configuration
+
+The frontend uses `.env.development` for local API requests and `.env.production`
+for production builds. Backend templates are provided as `.env.local.example` and
+`.env.production.example`.
+
+For local backend development, copy the local template once:
+
+```bash
+cd backend
+cp .env.local.example .env.local
+cp .env.local .env
+```
+
+Fill in the MinIO secret, then start with `npm run start:local`. The second
+copy is needed because Prisma CLI reads `.env` by default. The local Docker
+PostgreSQL database is `recipe_ai`; do not change it to `recipe` unless you
+create that database separately.
+
+For production, configure the values from `.env.production.example` in the
+1Panel application environment variables. Do not copy the local `.env.local`
+file to production.
+
 ## Local development
 
 ```bash
 cd backend
-cp .env.example .env
 docker compose up -d
 npm install
 npm run prisma:generate
-npm run prisma:migrate -- --name init
-npm run prisma:seed
-npm run start:dev
+npx prisma migrate deploy
+npm run start:local
 ```
 
 The API listens on `http://127.0.0.1:3000`.

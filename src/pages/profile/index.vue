@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import AuthPanel from '@/components/AuthPanel.vue'
 import { getCookingRecords } from '@/services/cooking'
 import { clearAuthSession, getCurrentUser, isAuthenticated } from '@/services/storage'
 import type { CookingRecord, UserProfile } from '@/types'
 
+const props = defineProps<{ active: boolean }>()
+
 const user = ref<UserProfile>(getCurrentUser())
 const authenticated = ref(isAuthenticated())
 const records = ref<CookingRecord[]>([])
+const loaded = ref(false)
 const totalCooking = computed(() => records.value.length)
 const cookingDays = computed(() => new Set(
   records.value
@@ -19,12 +21,17 @@ const cookingDays = computed(() => new Set(
 
 const load = async () => {
   authenticated.value = isAuthenticated()
-  if (!authenticated.value) return
+  if (!authenticated.value) {
+    loaded.value = true
+    return
+  }
   user.value = getCurrentUser()
   records.value = getCookingRecords()
+  loaded.value = true
 }
 
-onShow(() => { void load() })
+watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
+defineExpose({ refresh: load })
 const handleAuthenticated = (nextUser: UserProfile) => { user.value = nextUser; authenticated.value = true; void load() }
 const logout = () => { clearAuthSession(); authenticated.value = false; records.value = []; uni.showToast({ title: '已退出登录', icon: 'none' }) }
 </script>

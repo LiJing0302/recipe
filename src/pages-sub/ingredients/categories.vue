@@ -67,23 +67,37 @@ const remove = (name: string) => {
 const configOpen = ref(false)
 const configTarget = ref<IngredientCatalogItem>()
 const configForm = reactive<IngredientConfig>({ extraUnits: [], showExtraUnit: true, roomDays: 0, fridgeDays: 0, frozenDays: 0, fridgeSuitable: true })
-const baseUnitValues: Array<NonNullable<IngredientExtraUnit['baseUnit']>> = ['g', 'ml', 'count']
-const baseUnitLabels = ['克 (g)', '毫升 (ml)', '数量 (count)']
+const baseUnitValues: Array<NonNullable<IngredientExtraUnit['baseUnit']> | undefined> = [undefined, 'g', 'ml', 'count']
+const baseUnitLabels = ['不换算', '克 (g)', '毫升 (ml)', '数量 (count)']
 const baseUnitPickerOpen = ref(false)
 const baseUnitPickerTarget = ref(-1)
-const baseUnitPickerIndex = computed(() => {
-  const unit = configForm.extraUnits[baseUnitPickerTarget.value]?.baseUnit
-  const index = baseUnitValues.indexOf(unit || 'g')
-  return Math.max(0, index)
-})
+const conversionInputTargets = ref(new Set<number>())
 const hasBaseValue = (unit: IngredientExtraUnit) => unit.baseValue !== undefined && unit.baseValue !== null && String(unit.baseValue).trim() !== ''
-const baseUnitLabel = (unit: IngredientExtraUnit) => hasBaseValue(unit) ? baseUnitLabels[Math.max(0, baseUnitValues.indexOf(unit.baseUnit || 'g'))] : '不换算'
-const baseValuePlaceholder = (unit: IngredientExtraUnit) => hasBaseValue(unit) ? `每${unit.unit || '单位'}对应数值` : '不填写则不换算'
+const baseUnitPickerIndex = computed(() => {
+  const targetIndex = baseUnitPickerTarget.value
+  const unit = configForm.extraUnits[targetIndex]
+  if (!unit || (!hasBaseValue(unit) && !conversionInputTargets.value.has(targetIndex))) return 0
+  const index = baseUnitValues.indexOf(unit.baseUnit || 'g')
+  return index > 0 ? index : 1
+})
+const displayExtraUnits = computed(() => {
+  const entries = configForm.extraUnits.map((unit, index) => ({ unit, index }))
+  const qualitativeIndex = entries.findIndex(({ unit }) => unit.unit.trim() === '适量')
+  if (qualitativeIndex <= 0) return entries
+  const qualitative = entries[qualitativeIndex]
+  return [qualitative, ...entries.slice(0, qualitativeIndex), ...entries.slice(qualitativeIndex + 1)]
+})
+const baseUnitLabel = (unit: IngredientExtraUnit, index?: number) => hasBaseValue(unit) || (index !== undefined && conversionInputTargets.value.has(index)) ? baseUnitLabels[Math.max(0, baseUnitValues.indexOf(unit.baseUnit || 'g'))] : '不换算'
+const baseValuePlaceholder = (unit: IngredientExtraUnit, index?: number) => hasBaseValue(unit) || (index !== undefined && conversionInputTargets.value.has(index)) ? `每${unit.unit || '单位'}对应数值` : '不填写则不换算'
 
 /** 点击食材 chip：打开该食材的配置弹窗（单位 / 克数 / 保鲜时长 / 冰箱适配） */
 const openConfig = (item: IngredientCatalogItem) => {
   configTarget.value = item
   const config = getIngredientConfig(item.name, item.category)
+  conversionInputTargets.value = new Set(config.extraUnits.reduce<number[]>((targets, unit, index) => {
+    if (hasBaseValue(unit)) targets.push(index)
+    return targets
+  }, []))
   Object.assign(configForm, {
     extraUnits: config.extraUnits.map((unit) => ({ ...unit })),
     showExtraUnit: config.showExtraUnit,
@@ -95,18 +109,34 @@ const openConfig = (item: IngredientCatalogItem) => {
   configOpen.value = true
 }
 // 关闭动画期间保留标题数据，避免弹层内容高度瞬间收缩导致跳变；下次打开时会覆盖目标。
-const closeConfig = () => { configOpen.value = false; baseUnitPickerOpen.value = false; baseUnitPickerTarget.value = -1 }
+const closeConfig = () => { configOpen.value = false; baseUnitPickerOpen.value = false; baseUnitPickerTarget.value = -1; conversionInputTargets.value = new Set() }
 
 const addExtraUnit = () => configForm.extraUnits.push({ unit: '', baseUnit: 'g', baseValue: undefined })
 const removeExtraUnit = (index: number) => { configForm.extraUnits.splice(index, 1) }
 const openBaseUnitPicker = (index: number) => { baseUnitPickerTarget.value = index; baseUnitPickerOpen.value = true }
 const closeBaseUnitPicker = () => { baseUnitPickerOpen.value = false; baseUnitPickerTarget.value = -1 }
 const selectBaseUnit = (event: { indexs?: number[]; value?: string[] }) => {
-  const index = event.indexs?.[0] ?? baseUnitValues.indexOf((event.value?.[0] || 'g') as NonNullable<IngredientExtraUnit['baseUnit']>)
-  const target = configForm.extraUnits[baseUnitPickerTarget.value]
-  if (target) target.baseUnit = baseUnitValues[index] || 'g'
+  const index = event.indexs?.[0] ?? baseUnitLabels.indexOf(event.value?.[0] || '')
+  const targetIndex = baseUnitPickerTarget.value
+  const target = configForm.extraUnits[targetIndex]
+  if (target) {
+    const selectedBaseUnit = baseUnitValues[index]
+    if (!selectedBaseUnit) {
+      delete target.baseUnit
+      delete target.baseValue
+      const nextTargets = new Set(conversionInputTargets.value)
+      nextTargets.delete(targetIndex)
+      conversionInputTargets.value = nextTargets
+    } else {
+      if (target.baseUnit !== selectedBaseUnit) target.baseValue = undefined
+      target.baseUnit = selectedBaseUnit
+      conversionInputTargets.value = new Set(conversionInputTargets.value).add(targetIndex)
+    }
+  }
   closeBaseUnitPicker()
 }
+
+const isConversionInputVisible = (index: number) => hasBaseValue(configForm.extraUnits[index]) || conversionInputTargets.value.has(index)
 
 /** 展示额外单位开关：开启用"个/把/份"等计量，关闭退回克(g) */
 const toggleExtraUnit = (value: boolean) => {
@@ -158,6 +188,10 @@ const resetConfig = async () => {
       frozenDays: config.frozenDays,
       fridgeSuitable: config.fridgeSuitable
     })
+    conversionInputTargets.value = new Set(config.extraUnits.reduce<number[]>((targets, unit, index) => {
+      if (hasBaseValue(unit)) targets.push(index)
+      return targets
+    }, []))
     uni.showToast({ title: '已恢复默认配置', icon: 'none' })
     configVersion.value++
   } catch (error) {
@@ -240,11 +274,11 @@ const fridgeWarning = computed(() => {
           <switch :checked="configForm.showExtraUnit" color="#e8542e" @change="toggleExtraUnit($event.detail.value)" />
         </view>
         <view v-if="configForm.showExtraUnit" class="extra-unit-list">
-          <view v-for="(extraUnit, index) in configForm.extraUnits" :key="index" class="extra-unit-row">
-            <input v-model="extraUnit.unit" class="field-input extra-unit-name" placeholder="单位，如：把 / 勺 / 杯" maxlength="6" />
-            <view class="field-input extra-unit-base-picker" @click="openBaseUnitPicker(index)"><text>{{ baseUnitLabel(extraUnit) }}</text><AppIcon name="chevron-right" size="sm" /></view>
-            <input v-model.number="extraUnit.baseValue" class="field-input extra-unit-value" type="number" :placeholder="baseValuePlaceholder(extraUnit)" />
-            <view class="extra-unit-remove" aria-label="删除单位" @click="removeExtraUnit(index)"><AppIcon name="trash" size="sm" /></view>
+          <view v-for="entry in displayExtraUnits" :key="entry.index" class="extra-unit-row">
+            <input v-model="entry.unit.unit" class="field-input extra-unit-name" placeholder="单位，如：把 / 勺 / 杯" maxlength="6" />
+            <view class="field-input extra-unit-base-picker" @click="openBaseUnitPicker(entry.index)"><text>{{ baseUnitLabel(entry.unit, entry.index) }}</text><AppIcon name="chevron-right" size="sm" /></view>
+            <input v-if="isConversionInputVisible(entry.index)" v-model.number="entry.unit.baseValue" class="field-input extra-unit-value" type="number" :placeholder="baseValuePlaceholder(entry.unit, entry.index)" />
+            <view class="extra-unit-remove" aria-label="删除单位" @click="removeExtraUnit(entry.index)"><AppIcon name="trash" size="sm" /></view>
           </view>
           <button class="add-extra-unit" @click="addExtraUnit"><AppIcon name="plus" size="sm" /><text>添加额外单位</text></button>
           <text class="config-conversion-tip">不填写换算值时，该单位仍可用于食谱，但不会参与库存汇总。换算值表示“1 个当前单位 = 多少克 / 毫升 / 个”。</text>

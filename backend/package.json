@@ -6,6 +6,8 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
+    "start:local": "DOTENV_CONFIG_PATH=.env.local npm run start:dev",
+    "start:production": "DOTENV_CONFIG_PATH=.env.production npm run start",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:classify": "tsx prisma/classify-recipes.ts",

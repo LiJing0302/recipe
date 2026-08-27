@@ -1,7 +1,7 @@
-import type { Recipe } from '@/types'
+import type { Recipe, RecipeCategory } from '@/types'
 import { getCurrentUser } from './storage'
 import { confirmIngredientMappings, enrichIngredient, type IngredientMappingPayload } from './ingredient-matching'
-import { collectRemote, createRecipeCategoryRemote, createRecipeRemote as createRecipeApi, createShareLinkRemote, deleteRecipeCategoryRemote, deleteRecipeRemote as deleteRecipeApi, getCollectionsRemote, getMyRecipeCategoriesRemote, getMyRecipesRemote, getPublicRecipesRemote, getRecipeRemote, getSharedRecipeCategoriesRemote, getSharedRecipeRemote, getSharedRecipesRemote, importRecipeRemote, uncollectRemote, updateRecipeCategoryRemote, updateRecipeRemote as updateRecipeApi } from './api'
+import { collectRemote, createRecipeCategoryRemote, createRecipeRemote as createRecipeApi, createShareLinkRemote, deleteRecipeCategoryRemote, deleteRecipeRemote as deleteRecipeApi, getCollectionsRemote, getMyRecipeCategoriesRemote, getMyRecipesRemote, getPublicCategoriesRemote, getPublicRecipesRemote, getRecipeRemote, getSharedRecipeCategoriesRemote, getSharedRecipeRemote, getSharedRecipesRemote, importRecipeRemote, uncollectRemote, updateRecipeCategoryRemote, updateRecipeRemote as updateRecipeApi } from './api'
 
 const LEGACY_MOCK_RECIPE_IDS = new Set(['recipe-tomato-egg', 'recipe-broccoli-garlic', 'recipe-potato-beef', 'recipe-pumpkin-soup'])
 export const isLegacyMockRecipe = (id: string) => LEGACY_MOCK_RECIPE_IDS.has(id)
@@ -22,6 +22,8 @@ export const fetchCommunityRecipes = async (keyword = '') => {
   const normalized = keyword.trim().toLowerCase()
   return page.items.filter((recipe) => !normalized || [recipe.title, recipe.subtitle, ...recipe.tags].join('').toLowerCase().includes(normalized))
 }
+
+export const fetchPublicRecipeCategories = () => getPublicCategoriesRemote()
 
 export const getRecipeDetail = (id: string) => getRecipes().find((recipe) => recipe.id === id)
 export const getMyRecipes = () => getRecipes().filter((recipe) => recipe.authorId === getCurrentUser().id || collectionMemory.has(recipe.id))

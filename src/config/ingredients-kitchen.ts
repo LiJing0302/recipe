@@ -1,4 +1,5 @@
 import type { InventoryZone } from "@/services/inventory-view";
+import { API_BASE_URL } from "@/config";
 
 /**
  * 食材库厨房皮肤配置。
@@ -72,7 +73,7 @@ export type KitchenSkinConfig = {
 };
 
 const kitchenAssetUrl = (key: string) =>
-  `https://api.wenjun.cc.cd/api/uploads/object?key=${encodeURIComponent(key)}`;
+  `${API_BASE_URL}/uploads/object?key=${encodeURIComponent(key)}`;
 
 const kitchenAssetPrefix = "recipe-assets/ingredients";
 

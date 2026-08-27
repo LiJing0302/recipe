@@ -10,6 +10,7 @@ import { getConfiguredIngredientOptions, loadIngredientConfigsRemote, type Confi
 import { getInventoryBatches, loadInventoryBatches } from '@/services/inventory'
 import { isFollowing, loadFollowing, toggleFollowing } from '@/services/social'
 import { getCurrentUser } from '@/services/storage'
+import { switchAppTab } from '@/services/tabbar'
 import type { Recipe } from '@/types'
 
 type FeedTab = 'following' | 'discover'
@@ -272,14 +273,14 @@ const openFilter = (filter: FilterType) => { activeFilter.value = filter }
 const closeFilter = () => { activeFilter.value = '' }
 const selectCategory = (category: string) => { activeCategory.value = category; closeFilter() }
 const selectSort = (sort: SortMode) => { sortMode.value = sort; closeFilter() }
-const openRecipe = (id: string) => uni.navigateTo({ url: `/pages/recipe/detail?id=${id}` })
+const openRecipe = (id: string) => uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${id}` })
 onShow(load)
 watch(visibleRecipes, (recipes) => { waterfallRecipes.value = [...recipes] }, { immediate: true })
 </script>
 
 <template>
   <view class="page-shell community-page">
-    <view class="community-header"><view><text class="community-eyebrow">COMMUNITY</text><text class="community-heading">广场</text></view><text class="my-recipes-entry" @click="uni.navigateTo({ url: '/pages/my-recipes/index' })">我的食谱</text></view>
+    <view class="community-header"><view><text class="community-eyebrow">COMMUNITY</text><text class="community-heading">广场</text></view><text class="my-recipes-entry" @click="switchAppTab(3)">我的食谱</text></view>
     <view class="feed-tabs"><text v-for="tab in feedTabs" :key="tab.value" class="feed-tab" :class="{ active: activeFeedTab === tab.value }" @click="activeFeedTab = tab.value">{{ tab.label }}</text></view>
     <view class="filter-row"><view class="filter-chip" :class="{ active: activeFilter === 'category' || activeCategory !== '全部' }" @click="openFilter('category')"><text class="filter-name">分类</text><text class="filter-value">{{ activeCategory }}</text><text class="filter-arrow">⌄</text></view><view class="filter-chip" :class="{ active: activeFilter === 'sort' || sortMode !== 'comprehensive' }" @click="openFilter('sort')"><text class="filter-name">排序</text><text class="filter-value">{{ sortLabel }}</text><text class="filter-arrow">⌄</text></view></view>
     <view class="result-row"><text class="result-count">{{ visibleRecipes.length }} 道公开菜谱</text></view>

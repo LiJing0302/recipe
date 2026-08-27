@@ -97,9 +97,10 @@ model Recipe {
   categories     String[]           @default([])
   tags           String[]
   flavor         String
-  servings       Int
-  duration       Int
-  difficulty     String
+  process        String?
+  servings       Int?
+  duration       Int?
+  difficulty     String?
   rating         Float              @default(0)
   ratingCount    Int                @default(0)
   cookingCount   Int                @default(0)

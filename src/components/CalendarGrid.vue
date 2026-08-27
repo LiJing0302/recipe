@@ -51,9 +51,6 @@ const MAX_H = computed(() => (ROW_H * 6 - 8) * rpxToPx()) // 6 行 5 间距
 const collapsed = ref(true)
 const wrapHeight = ref(0)
 const innerOffset = ref(0)
-const dragging = ref(false)
-const dragStartY = ref(0)
-const dragStartH = ref(0)
 
 const currentRowIndex = computed(() => {
   const idx = calendarDays.value.findIndex((d) => d.value === selectedDate.value)
@@ -83,26 +80,6 @@ const setCollapsed = (value: boolean) => {
 const toggle = () => {
   if (!props.collapsible) return
   setCollapsed(!collapsed.value)
-}
-
-const onTouchStart = (e: TouchEvent) => {
-  if (!props.collapsible) return
-  dragging.value = true
-  dragStartY.value = e.touches[0].clientY
-  dragStartH.value = wrapHeight.value
-}
-const onTouchMove = (e: TouchEvent) => {
-  if (!dragging.value || !props.collapsible) return
-  const delta = e.touches[0].clientY - dragStartY.value
-  const h = Math.max(rowHpx.value, Math.min(MAX_H.value, dragStartH.value + delta))
-  wrapHeight.value = h
-  const progress = (h - rowHpx.value) / (MAX_H.value - rowHpx.value)
-  innerOffset.value = currentRowIndex.value * rowHpx.value * (1 - progress)
-}
-const onTouchEnd = () => {
-  if (!dragging.value) return
-  dragging.value = false
-  setCollapsed(wrapHeight.value < (rowHpx.value + MAX_H.value) / 2)
 }
 
 watch(() => props.initialDate, (value) => {
@@ -142,7 +119,7 @@ const chooseDate = (day: CalendarDay) => {
     <view class="cal-week">
       <text v-for="day in ['日', '一', '二', '三', '四', '五', '六']" :key="day" class="cal-week-day">{{ day }}</text>
     </view>
-    <view class="cal-days-wrap" :class="{ 'is-dragging': dragging }" :style="{ height: `${wrapHeight}px` }">
+    <view class="cal-days-wrap" :style="{ height: `${wrapHeight}px` }">
       <view class="cal-days" :style="{ transform: `translateY(-${innerOffset}px)` }">
         <view
           v-for="day in calendarDays"
@@ -159,10 +136,10 @@ const chooseDate = (day: CalendarDay) => {
         </view>
       </view>
     </view>
-    <!-- 折叠句柄：可拖拽或点击展开/收起 -->
-    <view v-if="collapsible" class="cal-handle" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd" @click="toggle">
-      <view class="cal-handle-bar" :class="{ 'is-dragging': dragging }" />
-      <text class="cal-handle-tip">{{ collapsed ? '下拉展开本月' : '上拉收起至本周' }}</text>
+    <!-- 折叠句柄：点击展开/收起 -->
+    <view v-if="collapsible" class="cal-handle" @click="toggle">
+      <view class="cal-handle-bar" />
+      <text class="cal-handle-tip">{{ collapsed ? '点击展开本月' : '点击收起至本周' }}</text>
     </view>
   </view>
 </template>
@@ -176,9 +153,7 @@ const chooseDate = (day: CalendarDay) => {
 .cal-week, .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
 .cal-week { margin-top: 22rpx; color: #a29388; font-size: 21rpx; }
 .cal-days-wrap { overflow: hidden; margin-top: 12rpx; transition: height .28s ease; }
-.cal-days-wrap.is-dragging { transition: none; }
 .cal-days { row-gap: 8rpx; transition: transform .28s ease; }
-.cal-days-wrap.is-dragging .cal-days { transition: none; }
 .cal-day { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 84rpx; color: #34473f; }
 .cal-day-number { display: flex; align-items: center; justify-content: center; width: 54rpx; height: 54rpx; border-radius: 50%; font-size: 24rpx; line-height: 1; }
 .cal-day-extra { display: flex; align-items: center; justify-content: center; height: 22rpx; margin-top: 2rpx; }
@@ -190,6 +165,5 @@ const chooseDate = (day: CalendarDay) => {
 /* 折叠句柄 */
 .cal-handle { display: flex; flex-direction: column; align-items: center; padding: 16rpx 0 4rpx; }
 .cal-handle-bar { width: 64rpx; height: 8rpx; border-radius: 999rpx; background: #e5d9cd; transition: background .2s ease, transform .2s ease; }
-.cal-handle-bar.is-dragging { background: #c93d20; transform: scaleY(1.4); }
 .cal-handle-tip { margin-top: 10rpx; color: #a29388; font-size: 18rpx; letter-spacing: 1rpx; }
 </style>

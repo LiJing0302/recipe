@@ -1,5 +1,5 @@
 import type { AIService, CookingAssistantInput, CookingAssistantResult, IngredientRecognition, RecipeRecommendation, RecipeRecommendationInput } from '@/types'
-import { getCommunityRecipes } from './recipe'
+import { getCommunityRecipes } from '../../services/recipe'
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

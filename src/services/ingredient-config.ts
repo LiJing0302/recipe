@@ -92,9 +92,14 @@ const remoteIngredientMeta = new Map<string, Omit<ConfiguredIngredientOption, 'i
 
 type BaseUnit = NonNullable<IngredientExtraUnit['baseUnit']>
 type DefaultUnitDefinition = { unit: string; baseUnit?: BaseUnit; baseValue?: number }
+const QUALITATIVE_UNIT = '适量'
 
 const unitDefinition = (unit: string, baseUnit?: BaseUnit, baseValue?: number): DefaultUnitDefinition => ({ unit, ...(baseUnit ? { baseUnit } : {}), ...(baseValue === undefined ? {} : { baseValue }) })
 const uniqueUnitDefinitions = (units: DefaultUnitDefinition[]) => units.filter((unit, index, list) => list.findIndex((item) => normalize(item.unit) === normalize(unit.unit)) === index)
+const withQualitativeUnit = <T extends { unit: string }>(units: T[]): T[] => {
+  if (units.some((unit) => normalize(unit.unit) === normalize(QUALITATIVE_UNIT))) return units
+  return [...units, { unit: QUALITATIVE_UNIT } as T]
+}
 
 /* 这些食材适合用重量管理。系统只内置确定的公制 / 市制换算，其他单位不猜测。 */
 const MASS_INGREDIENTS = new Set([
@@ -133,7 +138,7 @@ const getDefaultUnitDefinitions = (name: string, category: string): DefaultUnitD
       ? [unitDefinition('L', 'ml', 1000)]
       : []
   const extras = (NON_CONVERTING_EXTRA_UNITS[name] || []).map((unit) => unitDefinition(unit))
-  const definitions = uniqueUnitDefinitions([unitDefinition(defaultUnit), ...exactUnits, ...extras])
+  const definitions = withQualitativeUnit(uniqueUnitDefinitions([unitDefinition(defaultUnit), ...exactUnits, ...extras]))
   return definitions.length ? definitions : [unitDefinition(category ? 'g' : '份')]
 }
 
@@ -151,12 +156,12 @@ export const getDefaultIngredientConfig = (name: string, category: string): Ingr
 }
 
 const fromRemote = (config: RemoteIngredientConfig): IngredientConfig => ({
-  extraUnits: config.extraUnits.map((unit) => ({
+  extraUnits: withQualitativeUnit(config.extraUnits.map((unit) => ({
     unit: unit.unit,
     unitKey: unit.unitKey,
     ...(unit.baseUnit ? { baseUnit: unit.baseUnit } : {}),
     ...(unit.baseValue === undefined ? {} : { baseValue: Number(unit.baseValue) })
-  })),
+  }))),
   showExtraUnit: config.showExtraUnit,
   roomDays: config.roomDays,
   fridgeDays: config.fridgeDays,
@@ -173,7 +178,7 @@ const toRemote = (name: string, category: string, config: IngredientConfig): Rem
   fridgeDays: config.fridgeDays,
   frozenDays: config.frozenDays,
   fridgeSuitable: config.fridgeSuitable,
-  extraUnits: config.extraUnits.map((unit) => ({
+  extraUnits: withQualitativeUnit(config.extraUnits).map((unit) => ({
     unit: unit.unit.trim(),
     unitKey: unit.unitKey || normalize(unit.unit),
     ...(unit.baseValue === undefined ? {} : { baseUnit: unit.baseUnit || 'g', baseValue: Number(unit.baseValue) })
@@ -213,7 +218,7 @@ export const getConfiguredIngredientOptions = (): ConfiguredIngredientOption[] =
 export const getIngredientConfig = (name: string, category = ''): IngredientConfig => {
   const custom = remoteConfigs.get(ingredientKeyFor(name))
   const defaults = getDefaultIngredientConfig(name, category)
-  return custom ? { ...defaults, ...custom, extraUnits: custom.extraUnits || defaults.extraUnits } : defaults
+  return custom ? { ...defaults, ...custom, extraUnits: withQualitativeUnit(custom.extraUnits || defaults.extraUnits) } : defaults
 }
 
 export const getIngredientUnit = (name: string, fallbackUnit = ''): string => {

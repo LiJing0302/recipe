@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer'
 import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, MaxLength, Min, MinLength, ValidateNested } from 'class-validator'
+import { RECIPE_PROCESSES } from './recipe-processes'
 
 export class RecipeCategoryDto {
   @IsString()
@@ -192,19 +193,26 @@ export class CreateRecipeDto {
   @IsString()
   flavor!: string
 
+  @IsString()
+  @IsIn(RECIPE_PROCESSES)
+  process!: string
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  servings!: number
+  servings?: number
 
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  duration!: number
+  duration?: number
 
+  @IsOptional()
   @IsString()
   @IsIn(['简单', '中等', '进阶'])
-  difficulty!: string
+  difficulty?: string
 
   @IsBoolean()
   isPublic!: boolean
