@@ -168,6 +168,12 @@
 		line-height: 1.5;
 	}
 
+	/* 行内可点击文字链接（添加食材 / 添加步骤 / 上传主图 等），全局复用 */
+	.add-link {
+		color: $brand-dark;
+		font-size: 23rpx;
+	}
+
 	/* uni-app 原生 picker 弹层 z-index 仅 999，会被 u-popup(10075) 覆盖，
 	   提到比 u-popup 更高的层级，使 picker 永远显示在最顶层。 */
 	.uni-picker-container,

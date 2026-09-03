@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import IngredientLine from '@/components/IngredientLine.vue'
+import StepEditor from '@/components/StepEditor.vue'
+import OptionPicker from '@/components/OptionPicker.vue'
 import { RECIPE_PROCESSES } from '@/constants/recipes'
 import { enrichIngredient, amountInputValue, parseIngredientAmount } from '@/services/ingredient-matching'
 import { getIngredientUnitOptions } from '@/services/ingredient-config'
 import { createRecipeRemote, fetchMyRecipeCategories, fetchRecipe, getRecipeDetail, updateRecipeRemote } from '@/services/recipe'
+import { suggestRecipeMetadata, suggestRecipeStep, suggestRecipeSubtitle, type RecipeStepAiMode, type RecipeStepSuggestion } from '@/pages-sub/services/ai'
 import { uploadImage } from '@/services/api'
 import { getCurrentUser } from '@/services/storage'
 import IngredientPicker from '@/components/IngredientPicker.vue'
@@ -32,6 +36,11 @@ const processes = RECIPE_PROCESSES as readonly RecipeProcess[]
 const user = getCurrentUser()
 const loading = ref(false)
 const uploading = ref(false)
+const aiMetadataLoading = ref(false)
+const aiSubtitleLoading = ref(false)
+const stepAiLoading = reactive<Record<string, boolean>>({})
+const stepAiSuggestions = reactive<Record<string, RecipeStepSuggestion | undefined>>({})
+let metadataRequestId = 0
 const editingRecipe = ref<Recipe>()
 const recipeCategories = ref<UserRecipeCategory[]>([])
 const selectableCategories = computed(() => recipeCategories.value.filter((category) => category.id !== 'uncategorized' && category.name !== '未分类'))
@@ -43,6 +52,8 @@ const amountDrafts = reactive<Record<string, string>>({})
 const pageTitle = computed(() => props.mode === 'edit' ? '编辑食谱' : '新建食谱')
 const pageEyebrow = computed(() => props.mode === 'edit' ? 'EDIT RECIPE' : 'NEW RECIPE')
 const pageDescription = computed(() => props.mode === 'edit' ? '更新这道菜的内容和做法' : '记录一道属于自己的家常菜')
+const difficultyPickerOptions = computed(() => [{ label: '暂不设置', value: '' }, ...difficulties.map((difficulty) => ({ label: difficulty, value: difficulty }))])
+const processPickerOptions = computed(() => processes.map((process) => ({ label: process, value: process })))
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const emptyIngredient = (): Ingredient => ({ id: createId('ingredient'), name: '', amount: { raw: '', type: 'qualitative', conversion: 'none' } })
 const emptyStep = (): RecipeStep => ({ id: createId('step'), title: '', description: '', images: [] })
@@ -54,6 +65,11 @@ const resetForm = () => {
   ingredients.value = [firstIngredient]
   steps.value = [emptyStep()]
   editingRecipe.value = undefined
+  metadataRequestId += 1
+  aiMetadataLoading.value = false
+  aiSubtitleLoading.value = false
+  Object.keys(stepAiLoading).forEach((key) => delete stepAiLoading[key])
+  Object.keys(stepAiSuggestions).forEach((key) => delete stepAiSuggestions[key])
 }
 
 const fillRecipe = (recipe: Recipe) => {
@@ -111,15 +127,15 @@ const toggleCategory = (category: string) => { form.categories = form.categories
 const difficultyPickerOpen = ref(false)
 const openDifficultyPicker = () => { difficultyPickerOpen.value = true }
 const closeDifficultyPicker = () => { difficultyPickerOpen.value = false }
-const selectDifficulty = (difficulty: RecipeDifficulty | '') => {
-  form.difficulty = difficulty
+const selectDifficulty = (value: string) => {
+  form.difficulty = value as FormState['difficulty']
   closeDifficultyPicker()
 }
 const processPickerOpen = ref(false)
 const openProcessPicker = () => { processPickerOpen.value = true }
 const closeProcessPicker = () => { processPickerOpen.value = false }
-const selectProcess = (process: RecipeProcess) => {
-  form.process = process
+const selectProcess = (value: string) => {
+  form.process = value as RecipeProcess
   closeProcessPicker()
 }
 
@@ -175,37 +191,149 @@ const confirmUnitPicker = (event: { indexs?: number[]; value?: string[] }) => {
 const stepImages = (step: RecipeStep) => step.images?.length ? step.images : step.image ? [step.image] : []
 const chooseCover = () => {
   if (uploading.value) return
-  uni.chooseImage({ count: 1, sourceType: ['album', 'camera'], success: async (result) => {
-    uploading.value = true
-    try {
-      form.cover = (await uploadImage(result.tempFilePaths[0], 'cover')).url
-    } catch (error) {
-      console.error('[recipe-upload] cover upload failed', error)
-      uni.showToast({ title: '主图上传失败，请查看控制台', icon: 'none' })
-    } finally {
-      uploading.value = false
+  uni.chooseImage({
+    count: 1, sourceType: ['album', 'camera'], success: async (result) => {
+      uploading.value = true
+      try {
+        form.cover = (await uploadImage(result.tempFilePaths[0], 'cover')).url
+      } catch (error) {
+        console.error('[recipe-upload] cover upload failed', error)
+        uni.showToast({ title: '主图上传失败，请查看控制台', icon: 'none' })
+      } finally {
+        uploading.value = false
+      }
     }
-  } })
+  })
 }
 const chooseStepImages = (step: RecipeStep) => {
   if (uploading.value) return
-  uni.chooseImage({ count: 9, sourceType: ['album', 'camera'], success: async (result) => {
-    uploading.value = true
-    try {
-      const images = await Promise.all(result.tempFilePaths.map((filePath) => uploadImage(filePath, 'step')))
-      step.images = [...stepImages(step), ...images.map((image) => image.url)]
-      step.image = undefined
-    } catch (error) {
-      console.error('[recipe-upload] step upload failed', error)
-      uni.showToast({ title: '步骤图片上传失败，请查看控制台', icon: 'none' })
-    } finally {
-      uploading.value = false
+  uni.chooseImage({
+    count: 9, sourceType: ['album', 'camera'], success: async (result) => {
+      uploading.value = true
+      try {
+        const images = await Promise.all(result.tempFilePaths.map((filePath) => uploadImage(filePath, 'step')))
+        step.images = [...stepImages(step), ...images.map((image) => image.url)]
+        step.image = undefined
+      } catch (error) {
+        console.error('[recipe-upload] step upload failed', error)
+        uni.showToast({ title: '步骤图片上传失败，请查看控制台', icon: 'none' })
+      } finally {
+        uploading.value = false
+      }
     }
-  } })
+  })
 }
 const removeStepImage = (step: RecipeStep, index: number) => {
   if (step.images?.length) step.images.splice(index, 1)
   else if (index === 0) step.image = undefined
+}
+
+const handleTitleBlur = () => {
+  const title = form.title.trim()
+  if (!title) return
+  const requestId = ++metadataRequestId
+  aiMetadataLoading.value = true
+  void suggestRecipeMetadata({ title, categories: selectableCategories.value.map((category) => category.name) })
+    .then((suggestion) => {
+      if (requestId !== metadataRequestId || form.title.trim() !== title) return
+      form.categories = suggestion.category ? [suggestion.category] : []
+      form.process = suggestion.process || ''
+      form.flavor = suggestion.flavor || ''
+      form.difficulty = suggestion.difficulty || ''
+    })
+    .catch((error) => {
+      if (requestId === metadataRequestId) {
+        console.error('[recipe-ai] metadata suggestion failed', error)
+        uni.showToast({ title: error instanceof Error ? error.message : 'AI 信息识别失败，请稍后重试', icon: 'none' })
+      }
+    })
+    .finally(() => {
+      if (requestId === metadataRequestId) aiMetadataLoading.value = false
+    })
+}
+
+const generateSubtitle = async () => {
+  if (aiSubtitleLoading.value) return
+  const title = form.title.trim()
+  if (!title) return uni.showToast({ title: '请先填写食谱名称', icon: 'none' })
+  aiSubtitleLoading.value = true
+  try {
+    const subtitle = await suggestRecipeSubtitle({ title, flavor: form.flavor, process: form.process, difficulty: form.difficulty })
+    if (form.title.trim() === title) form.subtitle = subtitle
+  } catch (error) {
+    console.error('[recipe-ai] subtitle suggestion failed', error)
+    uni.showToast({ title: error instanceof Error ? error.message : 'AI 描述生成失败，请稍后重试', icon: 'none' })
+  } finally {
+    aiSubtitleLoading.value = false
+  }
+}
+
+const stepSuggestion = (stepId: string) => stepAiSuggestions[stepId]
+
+const handleStepInput = (step: RecipeStep) => {
+  if (step.description.trim()) delete stepAiSuggestions[step.id]
+}
+
+const requestStepSuggestion = async (step: RecipeStep, stepIndex: number, mode: RecipeStepAiMode = 'fill', applyToStep = false) => {
+  if (stepAiLoading[step.id] || (!applyToStep && stepAiSuggestions[step.id])) return
+  const title = form.title.trim()
+  const originalDescription = step.description.trim()
+  const recipeIngredients = ingredients.value
+    .filter((item) => item.name.trim())
+    .map((item) => ({ name: item.name.trim(), amount: (amountDrafts[item.id] || item.amount.raw).trim() || '适量' }))
+  if (!title) return
+  if (!recipeIngredients.length) return uni.showToast({ title: '请先填写食材，再获取步骤建议', icon: 'none' })
+
+  stepAiLoading[step.id] = true
+  try {
+    const suggestion = await suggestRecipeStep({
+      mode,
+      title,
+      subtitle: form.subtitle.trim(),
+      flavor: form.flavor.trim(),
+      process: form.process,
+      difficulty: form.difficulty,
+      categories: form.categories,
+      tags: form.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
+      servings: form.servings.trim(),
+      duration: form.duration.trim(),
+      ingredients: recipeIngredients,
+      steps: steps.value.map((item, index) => ({ index, title: item.title.trim(), description: item.description.trim(), tip: item.tip?.trim() || '', duration: item.duration })),
+      stepIndex
+    })
+    if (form.title.trim() !== title || step.description.trim() !== originalDescription) return
+    if (applyToStep) {
+      step.description = suggestion.description
+      delete stepAiSuggestions[step.id]
+    } else if (!step.description.trim()) {
+      stepAiSuggestions[step.id] = suggestion
+    }
+  } catch (error) {
+    console.error('[recipe-ai] step suggestion failed', error)
+    uni.showToast({ title: error instanceof Error ? error.message : 'AI 步骤建议生成失败，请稍后重试', icon: 'none' })
+  } finally {
+    stepAiLoading[step.id] = false
+  }
+}
+
+const handleStepAiAction = (step: RecipeStep, stepIndex: number) => {
+  if (stepAiLoading[step.id]) return
+  const mode: RecipeStepAiMode = step.description.trim() ? 'optimize' : 'fill'
+  void requestStepSuggestion(step, stepIndex, mode, true)
+}
+
+const applyStepSuggestion = (step: RecipeStep) => {
+  const suggestion = stepSuggestion(step.id)
+  if (!suggestion) return
+  if (!step.title.trim()) step.title = suggestion.title
+  if (!step.description.trim()) step.description = suggestion.description
+  if (!step.tip?.trim() && suggestion.tip) step.tip = suggestion.tip
+  if (step.duration === undefined && suggestion.duration) step.duration = suggestion.duration
+  delete stepAiSuggestions[step.id]
+}
+
+const dismissStepSuggestion = (stepId: string) => {
+  delete stepAiSuggestions[stepId]
 }
 
 const save = async () => {
@@ -267,101 +395,290 @@ const save = async () => {
 <template>
   <view v-if="loading" class="empty-state">正在加载食谱...</view>
   <view v-else class="page-shell edit-page">
-    <view class="editor-header"><text class="eyebrow">{{ pageEyebrow }}</text><text class="page-title">{{ pageTitle }}</text><text class="page-description">{{ pageDescription }}</text></view>
-    <view class="field-block"><text class="field-label">食谱名称</text><input v-model="form.title" class="text-input large" placeholder="填写菜名" /></view>
-    <view class="field-block"><text class="field-label">一句话描述</text><input v-model="form.subtitle" class="text-input" placeholder="可选，介绍这道菜的特点" /></view>
-    <view class="category-section"><view class="section-row"><text class="field-label category-label">菜谱分类</text><text class="category-count">{{ form.categories.length ? form.categories[0] : '必选' }}</text></view><view v-if="selectableCategories.length" class="category-options"><text v-for="category in selectableCategories" :key="category.id" class="category-option" :class="{ active: form.categories.includes(category.name) }" @click="toggleCategory(category.name)">{{ category.name }}</text></view><text v-else class="category-empty">暂无可用分类，请先检查网络连接</text></view>
-    <view class="field-block cover-block"><view class="section-row"><text class="field-label">主图</text><text class="add-link" @click="chooseCover">上传主图</text></view><view class="cover-picker" @click="chooseCover"><image v-if="form.cover" :src="form.cover" mode="aspectFill" /><view v-else class="cover-placeholder">可选，上传一道菜的主图</view></view></view>
-    <view class="field-block"><text class="field-label">制作工艺</text><view class="select-input" @click="openProcessPicker"><text>{{ form.process || '请选择制作工艺' }}</text><text>⌄</text></view></view>
-    <view class="field-grid"><view class="field-block"><text class="field-label">口味</text><input v-model="form.flavor" class="text-input" placeholder="可选，如酸甜、咸鲜" /></view><view class="field-block"><text class="field-label">难度</text><view class="select-input" @click="openDifficultyPicker"><text>{{ form.difficulty || '请选择难度' }}</text><text>⌄</text></view></view></view>
-    <view class="field-grid"><view class="field-block"><text class="field-label">几人份（可选）</text><input v-model="form.servings" type="number" class="text-input" placeholder="可选" /></view><view class="field-block"><text class="field-label">预计时长（分钟，可选）</text><input v-model="form.duration" type="number" class="text-input" placeholder="可选" /></view></view>
-    <view class="form-section"><view class="section-row"><text class="section-title">食材</text><text class="add-link" @click="addIngredient">+ 添加食材</text></view><view v-for="ingredient in ingredients" :key="ingredient.id" class="ingredient-line"><view class="line-form"><view class="ingredient-name-field" :class="{ 'is-empty': !ingredient.name }" @click="openIngredientPicker(ingredient)"><text>{{ ingredient.name || '选择食材' }}</text><AppIcon name="chevron-right" size="sm" /></view><view class="amount-field"><input v-model="amountDrafts[ingredient.id]" type="text" placeholder="如：半、1/2、适量" @blur="ingredient.amount = parseIngredientAmount(amountDrafts[ingredient.id], ingredient.name, ingredient.amount.unit)" /><view v-if="ingredient.name" class="amount-unit-picker" @click="openUnitPicker(ingredient)">{{ ingredient.amount.unit || 'g' }}<text class="unit-chevron">⌄</text></view><text v-else class="amount-unit">g</text></view></view></view></view>
+    <view class="editor-header"><text class="eyebrow">{{ pageEyebrow }}</text><text class="page-title">{{ pageTitle
+        }}</text><text class="page-description">{{ pageDescription }}</text></view>
+    <view class="field-block">
+      <view class="field-label-row"><text class="field-label">食谱名称</text><text v-if="aiMetadataLoading"
+          class="ai-status">AI 识别中</text></view><input v-model="form.title" class="text-input large" placeholder="填写菜名"
+        @blur="handleTitleBlur" />
+    </view>
+    <view class="field-block">
+      <view class="field-label-row"><text class="field-label">一句话描述</text>
+        <view class="ai-field-button" :class="{ disabled: aiSubtitleLoading }" @click="generateSubtitle">
+          <AppIcon name="spark" size="xs" label="AI 生成描述" /><text>{{ aiSubtitleLoading ? '生成中' : 'AI 辅助' }}</text>
+        </view>
+      </view><input v-model="form.subtitle" class="text-input" placeholder="可选，介绍这道菜的特点" />
+    </view>
+    <view class="category-section">
+      <view class="section-row"><text class="field-label category-label">菜谱分类</text><text class="category-count">{{
+        aiMetadataLoading ? '识别中' : form.categories.length ? form.categories[0] : '必选' }}</text></view>
+      <view v-if="selectableCategories.length" class="category-options"><text v-for="category in selectableCategories"
+          :key="category.id" class="category-option" :class="{ active: form.categories.includes(category.name) }"
+          @click="toggleCategory(category.name)">{{ category.name }}</text></view><text v-else
+        class="category-empty">暂无可用分类，请先检查网络连接</text>
+    </view>
+    <view class="field-block cover-block">
+      <view class="section-row"><text class="field-label">主图</text><text class="add-link"
+          @click="chooseCover">上传主图</text></view>
+      <view class="cover-picker" @click="chooseCover">
+        <image v-if="form.cover" :src="form.cover" mode="aspectFill" />
+        <view v-else class="cover-placeholder">可选，上传一道菜的主图</view>
+      </view>
+    </view>
+    <view class="field-block"><text class="field-label">制作工艺</text>
+      <view class="select-input" @click="openProcessPicker"><text>{{ form.process || '请选择制作工艺' }}</text><text>⌄</text>
+      </view>
+    </view>
+    <view class="field-grid">
+      <view class="field-block"><text class="field-label">口味</text><input v-model="form.flavor" class="text-input"
+          placeholder="可选，如酸甜、咸鲜" /></view>
+      <view class="field-block"><text class="field-label">难度</text>
+        <view class="select-input" @click="openDifficultyPicker"><text>{{ form.difficulty || '请选择难度'
+            }}</text><text>⌄</text></view>
+      </view>
+    </view>
+    <view class="field-grid">
+      <view class="field-block"><text class="field-label">几人份（可选）</text><input v-model="form.servings" type="number"
+          class="text-input" placeholder="可选" /></view>
+      <view class="field-block"><text class="field-label">预计时长（分钟，可选）</text><input v-model="form.duration" type="number"
+          class="text-input" placeholder="可选" /></view>
+    </view>
+    <view class="form-section">
+      <view class="section-row"><text class="section-title">食材</text><text class="add-link" @click="addIngredient">+
+          添加食材</text></view>
+      <IngredientLine v-for="ingredient in ingredients" :key="ingredient.id" :ingredient="ingredient"
+        :amount-draft="amountDrafts[ingredient.id] || ''" @open-picker="openIngredientPicker(ingredient)"
+        @open-unit-picker="openUnitPicker(ingredient)" @update:amount-draft="(value) => (amountDrafts[ingredient.id] = value)"
+        @blur-amount="(value) => { amountDrafts[ingredient.id] = value; ingredient.amount = parseIngredientAmount(value, ingredient.name, ingredient.amount.unit) }" />
+    </view>
     <IngredientPicker :open="pickerOpen" @close="pickerOpen = false" @select="handleSelectIngredient" />
-    <up-popup :show="difficultyPickerOpen" custom-class="popup-static" mode="center" :round="24" @close="closeDifficultyPicker">
-      <view class="difficulty-modal" @click.stop>
-        <view class="difficulty-header"><view><text class="difficulty-eyebrow">RECIPE SETTINGS</text><text class="difficulty-title">选择难度</text><text class="difficulty-desc">根据准备和烹饪复杂度选择</text></view><view class="difficulty-close" @click="closeDifficultyPicker"><AppIcon name="close" size="md" /></view></view>
-        <view class="difficulty-options"><view class="difficulty-option" :class="{ active: !form.difficulty }" @click="selectDifficulty('')"><text>暂不设置</text><text v-if="!form.difficulty" class="difficulty-check">✓</text></view><view v-for="difficulty in difficulties" :key="difficulty" class="difficulty-option" :class="{ active: form.difficulty === difficulty }" @click="selectDifficulty(difficulty)"><text>{{ difficulty }}</text><text v-if="form.difficulty === difficulty" class="difficulty-check">✓</text></view></view>
-      </view>
-    </up-popup>
-    <up-popup :show="processPickerOpen" custom-class="popup-static" mode="center" :round="24" @close="closeProcessPicker">
-      <view class="difficulty-modal" @click.stop>
-        <view class="difficulty-header"><view><text class="difficulty-eyebrow">RECIPE METHOD</text><text class="difficulty-title">选择制作工艺</text><text class="difficulty-desc">使用系统维护的工艺分类，便于后续查找</text></view><view class="difficulty-close" @click="closeProcessPicker"><AppIcon name="close" size="md" /></view></view>
-        <view class="difficulty-options"><view v-for="process in processes" :key="process" class="difficulty-option" :class="{ active: form.process === process }" @click="selectProcess(process)"><text>{{ process }}</text><text v-if="form.process === process" class="difficulty-check">✓</text></view></view>
-      </view>
-    </up-popup>
-    <up-picker v-if="unitPickerTarget" :show="unitPickerOpen" :columns="[ingredientUnitOptions(unitPickerTarget)]" :default-index="[ingredientUnitIndex(unitPickerTarget)]" title="选择计量单位" cancel-color="#a29388" confirm-color="#c93d20" :round="24" @close="closeUnitPicker" @cancel="closeUnitPicker" @confirm="confirmUnitPicker" />
-    <view class="form-section"><view class="section-row"><text class="section-title">步骤</text><text class="add-link" @click="addStep">+ 添加步骤</text></view><view v-for="(step, index) in steps" :key="step.id" class="step-form"><text class="step-form-index">{{ index + 1 }}</text><view class="step-form-fields"><textarea v-model="step.description" class="step-content-input" placeholder="步骤内容：写下具体做法" /><input v-model="step.tip" class="step-tip-input" placeholder="小贴士（可选）" /><view class="step-image-toolbar"><text class="step-image-label">步骤图片</text><text class="add-link" @click.stop="chooseStepImages(step)">+ 添加图片</text></view><view v-if="stepImages(step).length" class="step-image-grid"><view v-for="(image, imageIndex) in stepImages(step)" :key="image + imageIndex" class="step-image-item"><image :src="image" mode="aspectFill" /><text @click.stop="removeStepImage(step, imageIndex)">删除</text></view></view></view></view></view>
+    <OptionPicker v-model="difficultyPickerOpen" :options="difficultyPickerOptions" :model="form.difficulty"
+      kicker="RECIPE SETTINGS" title="选择难度" desc="根据准备和烹饪复杂度选择" mode="center" @select="selectDifficulty" />
+    <OptionPicker v-model="processPickerOpen" :options="processPickerOptions" :model="form.process" kicker="RECIPE METHOD"
+      title="选择制作工艺" desc="使用系统维护的工艺分类，便于后续查找" mode="bottom" @select="selectProcess" />
+    <up-picker v-if="unitPickerTarget" :show="unitPickerOpen" :columns="[ingredientUnitOptions(unitPickerTarget)]"
+      :default-index="[ingredientUnitIndex(unitPickerTarget)]" title="选择计量单位" cancel-color="#a29388"
+      confirm-color="#c93d20" :round="24" @close="closeUnitPicker" @cancel="closeUnitPicker"
+      @confirm="confirmUnitPicker" />
+    <view class="form-section">
+      <view class="section-row"><text class="section-title">步骤</text><text class="add-link" @click="addStep">+
+          添加步骤</text></view>
+      <StepEditor v-for="(step, index) in steps" :key="step.id" :step="step" :index="index"
+        :loading="!!stepAiLoading[step.id]" :suggestion="stepSuggestion(step.id)" :images="stepImages(step)"
+        @ai-action="handleStepAiAction(step, index)" @input="handleStepInput(step)"
+        @apply-suggestion="applyStepSuggestion(step)" @dismiss-suggestion="dismissStepSuggestion(step.id)"
+        @choose-images="chooseStepImages(step)" @remove-image="(imageIndex) => removeStepImage(step, imageIndex)" />
+    </view>
     <text v-if="uploading" class="uploading-text">图片上传中...</text>
-    <view class="public-row"><view><text class="public-title">公开到社区</text><text class="caption">让更多人发现你的拿手菜</text></view><switch :checked="form.isPublic" color="#c93d20" @change="form.isPublic = $event.detail.value" /></view>
+    <view class="public-row">
+      <view><text class="public-title">公开到社区</text><text class="caption">让更多人发现你的拿手菜</text></view>
+      <switch :checked="form.isPublic" color="#c93d20" @change="form.isPublic = $event.detail.value" />
+    </view>
     <button class="primary-button save-button" @click="save">保存食谱</button>
   </view>
 </template>
 
-<style scoped>
-.edit-page { padding-top: 42rpx; padding-bottom: 60rpx; }
-.editor-header { margin-bottom: 40rpx; }
-.eyebrow { display: block; color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
-.page-title { display: block; margin-top: 14rpx; color: #33261e; font-size: 48rpx; font-weight: 700; }
-.page-description { display: block; margin-top: 10rpx; color: #a29388; font-size: 24rpx; }
-.category-section { margin-bottom: 28rpx; }
-.category-label { margin-bottom: 0; }
-.category-count { color: #a29388; font-size: 21rpx; }
-.category-options { display: flex; flex-wrap: wrap; gap: 14rpx 12rpx; }
-.category-option { padding: 12rpx 18rpx; border: 1rpx solid #f0e3d6; border-radius: 12rpx; background: #fff; color: #8a7a70; font-size: 23rpx; transition: background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease; }
-.category-option.active { border-color: #e8542e; background: #fdeee7; color: #c93d20; font-weight: 600; box-shadow: 0 4rpx 10rpx rgba(232, 84, 46, .08); }
-.category-empty { color: #a36f2b; font-size: 22rpx; }
-.cover-block { margin-top: 8rpx; }
-.cover-block .field-label { margin-bottom: 0; }
-.cover-picker { height: 300rpx; overflow: hidden; border-radius: 18rpx; background: #f7ede3; }
-.cover-picker image { width: 100%; height: 100%; }
-.cover-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #c93d20; font-size: 25rpx; }
-.field-block { flex: 1; margin-bottom: 26rpx; }
-.field-label { display: block; margin-bottom: 12rpx; color: #6f7d73; font-size: 23rpx; }
-.text-input, .select-input { width: 100%; height: 78rpx; padding: 0 20rpx; border: 1rpx solid #e3e9e1; border-radius: 14rpx; background: #fff; color: #33261e; font-size: 25rpx; line-height: 78rpx; }
-.text-input.large { height: 88rpx; font-size: 30rpx; line-height: 88rpx; }
-.select-input { display: flex; justify-content: space-between; }
-.difficulty-modal { width: 620rpx; max-width: calc(100vw - 64rpx); padding: 32rpx; border: 1rpx solid #f0e3d6; border-radius: 24rpx; background: #fff; box-sizing: border-box; }
-.difficulty-header { display: flex; align-items: flex-start; justify-content: space-between; }
-.difficulty-eyebrow { display: block; color: #b8862f; font-size: 16rpx; font-weight: 700; letter-spacing: 2rpx; }
-.difficulty-title { display: block; margin-top: 8rpx; color: #33261e; font-family: Georgia, 'Songti SC', serif; font-size: 34rpx; font-weight: 700; }
-.difficulty-desc { display: block; margin-top: 8rpx; color: #a29388; font-size: 21rpx; line-height: 1.4; }
-.difficulty-close { display: flex; align-items: center; justify-content: center; width: 56rpx; height: 56rpx; border-radius: 16rpx; background: #fff8f3; color: #a29388; }
-.difficulty-options { margin-top: 26rpx; }
-.difficulty-option { display: flex; align-items: center; justify-content: space-between; min-height: 78rpx; padding: 0 20rpx; border: 1rpx solid #f0e3d6; border-radius: 14rpx; color: #6f7d73; font-size: 25rpx; }
-.difficulty-option + .difficulty-option { margin-top: 12rpx; }
-.difficulty-option.active { border-color: #e8542e; background: #fdeee7; color: #c93d20; font-weight: 600; }
-.difficulty-check { font-size: 30rpx; }
-.field-grid { display: flex; gap: 18rpx; }
-.form-section { margin-top: 28rpx; }
-.add-link { color: #c93d20; font-size: 23rpx; }
-.line-form { display: flex; gap: 16rpx; margin-top: 16rpx; }
-.line-form input { flex: 1; height: 72rpx; padding: 0 18rpx; border-radius: 12rpx; background: #fff; color: #34473f; font-size: 24rpx; box-sizing: border-box; }
-/* 分量输入：自带单位标签（选中食材后由公共目录带出） */
-.amount-field { display: flex; align-items: center; flex: 1; max-width: 232rpx; min-width: 0; height: 72rpx; overflow: hidden; border-radius: 12rpx; background: #fff; }
-.amount-field input { flex: 1; min-width: 0; width: auto; padding: 0 0 0 18rpx; border-radius: 0; background: transparent; }
-.amount-unit { flex-shrink: 0; padding: 0 14rpx 0 8rpx; color: #b8862f; font-size: 21rpx; }
-.amount-unit-picker { display: flex; align-items: center; gap: 4rpx; flex-shrink: 0; height: 72rpx; padding: 0 12rpx 0 8rpx; color: #b8862f; font-size: 21rpx; }
-.unit-chevron { color: #c9b8a8; font-size: 22rpx; line-height: 1; }
-/* 食材名称：点击弹出选择器 */
-.ingredient-name-field { display: flex; align-items: center; justify-content: space-between; gap: 8rpx; flex: 1; min-width: 0; height: 72rpx; padding: 0 18rpx; border-radius: 12rpx; background: #fff; color: #33261e; font-size: 24rpx; }
-.ingredient-name-field.is-empty { color: #c9b8a8; }
-.ingredient-name-field .app-icon { color: #c9b8a8; transform: rotate(90deg); }
-.step-form { display: flex; gap: 16rpx; margin-top: 18rpx; }
-.step-form-index { display: flex; align-items: center; justify-content: center; flex: 0 0 44rpx; width: 44rpx; height: 44rpx; border-radius: 50%; background: #dceadd; color: #c93d20; font-size: 22rpx; }
-.step-form-fields { flex: 1; }
-.step-form-fields input, .step-form-fields textarea { width: 100%; padding: 16rpx; border-radius: 12rpx; background: #fff; color: #34473f; font-size: 24rpx; box-sizing: border-box; }
-.step-content-input { height: 120rpx; margin-top: 0 !important; line-height: 1.5; }
-.step-tip-input { height: 78rpx; margin-top: 12rpx; line-height: 46rpx; }
-.step-image-toolbar { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
-.step-image-label { color: #6f7d73; font-size: 22rpx; }
-.step-image-grid { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 12rpx; }
-.step-image-item { position: relative; width: 132rpx; height: 132rpx; overflow: hidden; border-radius: 12rpx; background: #f7ede3; }
-.step-image-item image { width: 100%; height: 100%; }
-.step-image-item text { position: absolute; right: 6rpx; bottom: 6rpx; padding: 4rpx 8rpx; border-radius: 8rpx; background: rgba(23,34,30,.68); color: #fff; font-size: 18rpx; }
-.uploading-text { display: block; margin-top: 24rpx; color: #c93d20; font-size: 23rpx; text-align: center; }
-.public-row { display: flex; align-items: center; justify-content: space-between; margin-top: 38rpx; padding: 24rpx; border-radius: 18rpx; background: #fff; }
-.public-title, .public-row .caption { display: block; }
-.public-title { color: #34473f; font-size: 26rpx; }
-.public-row .caption { margin-top: 7rpx; }
-.save-button { margin-top: 28rpx; }
+<style scoped lang="scss">
+.edit-page {
+  padding-top: 42rpx;
+  padding-bottom: 60rpx;
+}
+
+.editor-header {
+  margin-bottom: 40rpx;
+}
+
+.eyebrow {
+  display: block;
+  color: $ink-eyebrow;
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.page-title {
+  display: block;
+  margin-top: 14rpx;
+  color: $ink;
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.page-description {
+  display: block;
+  margin-top: 10rpx;
+  color: $ink-faint;
+  font-size: 24rpx;
+}
+
+.category-section {
+  margin-bottom: 28rpx;
+}
+
+.category-label {
+  margin-bottom: 0;
+}
+
+.category-count {
+  color: $ink-faint;
+  font-size: 21rpx;
+}
+
+.category-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx 12rpx;
+}
+
+.category-option {
+  padding: 12rpx 18rpx;
+  border: 1rpx solid $line;
+  border-radius: $radius-12;
+  background: $surface;
+  color: $ink-tan;
+  font-size: 23rpx;
+  transition: background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+.category-option.active {
+  border-color: $brand;
+  background: $brand-soft;
+  color: $brand-dark;
+  font-weight: 600;
+  box-shadow: $shadow-brand-soft;
+}
+
+.category-empty {
+  color: $amber;
+  font-size: 22rpx;
+}
+
+.cover-block {
+  margin-top: 8rpx;
+}
+
+.cover-block .field-label {
+  margin-bottom: 0;
+}
+
+.cover-picker {
+  height: 300rpx;
+  overflow: hidden;
+  border-radius: $radius-18;
+  background: $surface-soft;
+}
+
+.cover-picker image {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: $brand-dark;
+  font-size: 25rpx;
+}
+
+.field-block {
+  flex: 1;
+  margin-bottom: 26rpx;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 12rpx;
+  color: $ink-field;
+  font-size: 23rpx;
+}
+
+.ai-status {
+  margin-bottom: 12rpx;
+  color: $brand-dark;
+  font-size: 20rpx;
+}
+
+.ai-field-button {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-bottom: 12rpx;
+  color: $brand-dark;
+  font-size: 21rpx;
+}
+
+.ai-field-button.disabled {
+  opacity: .55;
+}
+
+.text-input,
+.select-input {
+  width: 100%;
+  height: 78rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid $line-cool;
+  border-radius: $radius-14;
+  background: $surface;
+  color: $ink;
+  font-size: 25rpx;
+  line-height: 78rpx;
+}
+
+.text-input.large {
+  height: 88rpx;
+  font-size: 30rpx;
+  line-height: 88rpx;
+}
+
+.select-input {
+  display: flex;
+  justify-content: space-between;
+}
+
+.field-grid {
+  display: flex;
+  gap: 18rpx;
+}
+
+.form-section {
+  margin-top: 28rpx;
+}
+
+.uploading-text {
+  display: block;
+  margin-top: 24rpx;
+  color: $brand-dark;
+  font-size: 23rpx;
+  text-align: center;
+}
+
+.public-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 38rpx;
+  padding: 24rpx;
+  border-radius: $radius-18;
+  background: $surface;
+}
+
+.public-title {
+  color: $ink-deep;
+  font-size: 26rpx;
+}
+
+.public-row .caption {
+  margin-top: 7rpx;
+}
+
+.save-button {
+  margin-top: 28rpx;
+}
 </style>

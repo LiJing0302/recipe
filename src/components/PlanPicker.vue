@@ -17,25 +17,23 @@ const formatDate = (date: Date) => `${date.getFullYear()}-${`${date.getMonth() +
 const today = formatDate(new Date())
 const initialPlanDate = props.initialDate < today ? today : props.initialDate
 const selectedDate = ref(initialPlanDate)
-const selectedMeals = ref<MealType[]>(['dinner'])
+const selectedMeal = ref<MealType>('dinner')
 
 watch(() => props.open, (open) => {
   if (!open) return
   selectedDate.value = props.initialDate < today ? today : props.initialDate
-  selectedMeals.value = ['dinner']
+  selectedMeal.value = 'dinner'
 })
 
 const onSelect = (date: string) => {
   selectedDate.value = date
   if (props.inline) emit('select', date)
 }
-const toggleMeal = (meal: MealType) => {
-  selectedMeals.value = selectedMeals.value.includes(meal) ? selectedMeals.value.filter((item) => item !== meal) : [...selectedMeals.value, meal]
-}
+const selectMeal = (meal: MealType) => { selectedMeal.value = meal }
 const confirm = () => {
   if (selectedDate.value < today) return uni.showToast({ title: '不能加入今天之前的计划', icon: 'none' })
-  if (!selectedMeals.value.length) return uni.showToast({ title: '至少选择一餐', icon: 'none' })
-  emit('confirm', selectedDate.value, selectedMeals.value)
+  if (!selectedMeal.value) return uni.showToast({ title: '请选择一餐', icon: 'none' })
+  emit('confirm', selectedDate.value, [selectedMeal.value])
 }
 </script>
 
@@ -49,7 +47,7 @@ const confirm = () => {
     <view class="plan-modal" @click.stop>
       <view class="modal-header"><view><text class="modal-kicker">ADD TO PLAN</text><text class="modal-title">安排「{{ recipeTitle }}」</text></view><text class="close" @click="emit('close')">×</text></view>
       <CalendarGrid :initial-date="selectedDate" @select="onSelect" />
-      <view class="meal-section"><view class="section-row"><text class="section-title">安排哪一餐</text><text class="caption">可多选</text></view><view class="meal-options"><view v-for="meal in mealOptions" :key="meal.value" class="meal-option" :class="{ selected: selectedMeals.includes(meal.value) }" @click="toggleMeal(meal.value)"><view class="meal-icon">{{ meal.value === 'breakfast' ? '早' : meal.value === 'lunch' ? '午' : '晚' }}</view><view class="meal-copy"><text>{{ meal.label }}</text><text>{{ meal.time }}</text></view><view class="check" :class="{ checked: selectedMeals.includes(meal.value) }">✓</view></view></view></view>
+      <view class="meal-section"><view class="section-row"><text class="section-title">安排哪一餐</text><text class="caption">单选</text></view><view class="meal-options"><view v-for="meal in mealOptions" :key="meal.value" class="meal-option" :class="{ selected: selectedMeal === meal.value }" @click="selectMeal(meal.value)"><view class="meal-icon">{{ meal.value === 'breakfast' ? '早' : meal.value === 'lunch' ? '午' : '晚' }}</view><view class="meal-copy"><text>{{ meal.label }}</text><text>{{ meal.time }}</text></view><view class="check" :class="{ checked: selectedMeal === meal.value }">✓</view></view></view></view>
       <view class="modal-footer"><button class="secondary-button" @click="emit('close')">取消</button><button class="primary-button" @click="confirm">加入计划</button></view>
     </view>
   </view>

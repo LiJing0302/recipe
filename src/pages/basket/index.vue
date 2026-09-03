@@ -7,7 +7,6 @@ import { addInventoryBatch, getFreshness, getInventoryBatches, getInventoryBatch
 import { getIngredientCategory, INGREDIENT_CATALOG, INGREDIENT_CATEGORIES } from '@/constants/ingredients'
 import { formatIngredientAmount, getIngredientKey } from '@/services/ingredient-matching'
 import { formatDate } from '@/services/menu'
-import { switchAppTab } from '@/services/tabbar'
 import { withLoginRequired } from '@/services/auth-guard'
 import type { BasketPendingItem, IngredientInventoryBatch } from '@/types'
 
@@ -17,7 +16,7 @@ const pendingItems = ref<BasketPendingItem[]>([])
 const todayBatches = ref<IngredientInventoryBatch[]>([])
 const loaded = ref(false)
 const formOpen = ref(false)
-const viewMode = ref<'ingredient' | 'recipe'>('ingredient')
+const viewMode = ref<'ingredient' | 'recipe'>('recipe')
 type PendingIngredientGroup = {
   key: string
   name: string
@@ -160,7 +159,7 @@ const removeGroup = (group: PendingIngredientGroup) => {
 }
 const sourceLabel = (batch: IngredientInventoryBatch) => batch.sourceType === 'recipe' ? `来自：${batch.recipeTitle || '菜谱'}` : '今日购入'
 watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
-defineExpose({ refresh: load })
+defineExpose({ refresh: load, openManualForm })
 </script>
 
 <template>
@@ -168,24 +167,15 @@ defineExpose({ refresh: load })
     <view class="page-intro basket-intro">
       <view class="intro-copy"><text class="eyebrow">GROCERY BASKET</text><text class="page-title">菜篮子</text><text
           class="page-desc">把要买的和刚买到的，放在一起看清楚</text></view>
-      <button class="add-purchase" aria-label="添加今日购入" @click="openManualForm">
-        <AppIcon name="plus" size="sm" /><text>今日购入</text>
-      </button>
     </view>
     <view class="view-switch" role="tablist">
-      <button class="view-switch-item" :class="{ active: viewMode === 'ingredient' }"
-        @click="viewMode = 'ingredient'">按食材</button>
       <button class="view-switch-item" :class="{ active: viewMode === 'recipe' }"
         @click="viewMode = 'recipe'">按菜谱</button>
+      <button class="view-switch-item" :class="{ active: viewMode === 'ingredient' }"
+        @click="viewMode = 'ingredient'">按食材</button>
     </view>
-    <view class="basket-progress">
-      <view class="progress-copy"><text class="progress-kicker">KITCHEN RHYTHM</text><text
-          class="progress-title">今天也要好好吃饭</text></view>
-      <view class="progress-ring"><text>{{ pendingItems.length }}</text><text>待办</text></view>
-    </view>
-
     <view v-if="viewMode === 'ingredient' && pendingGroups.length" class="content-section">
-      <view class="section-row"><text class="section-title">待采购</text><text class="caption">按食材整理</text></view>
+      <view class="section-row"><text class="section-title">待采购</text></view>
       <view v-for="group in pendingGroups" :key="group.key" class="pending-group surface">
         <view class="recipe-row">
           <view class="recipe-copy"><text class="recipe-title">{{ group.name }}</text><text class="recipe-meta">来自：{{
@@ -217,10 +207,11 @@ defineExpose({ refresh: load })
     </view>
 
     <view v-if="viewMode === 'recipe' && pendingRecipeGroups.length" class="content-section">
-      <view class="section-row"><text class="section-title">待采购</text><text class="caption">按菜谱整理</text></view>
+      <view class="section-row"><text class="section-title">待采购</text></view>
       <view v-for="group in pendingRecipeGroups" :key="group.key" class="pending-group recipe-group surface">
         <view class="recipe-row">
-          <image v-if="group.cover" :src="group.cover" mode="aspectFill" />
+          <image v-if="group.cover" :src="group.cover" mode="aspectFill"
+            style="display: block; width: 44px; height: 44px; object-fit: cover;" />
           <view class="recipe-copy"><text class="recipe-title">{{ group.title }}</text><text class="recipe-meta">{{
             group.pendingItems.length }} 项待采购 · {{ group.purchasedBatches.length }} 项已采购</text></view>
         </view>
@@ -242,9 +233,12 @@ defineExpose({ refresh: load })
     <view v-if="!hasVisibleItems" class="empty-basket">
       <view class="empty-icon">
         <AppIcon name="bag" size="lg" />
-      </view><text class="empty-title">菜篮子还是空的</text><text class="empty-desc">从菜谱加入待采购食材，或记录一笔今天刚买到的食材</text><button
-        class="primary-button" @click="openManualForm">添加今日购入</button><button class="secondary-button"
-        @click="switchAppTab(0)">回到做饭计划</button>
+      </view>
+      <text class="empty-title">菜篮子还是空的</text>
+      <text class="empty-desc">从菜谱加入待采购食材，或记录一笔今天刚买到的食材</text>
+      <view class="empty-actions">
+        <button class="primary-button" @click="openManualForm">加入菜篮子</button>
+      </view>
     </view>
     <InventoryBatchForm :open="formOpen" :batch="pendingFormBatch" :title="purchaseGroup ? '确认采购' : '添加今日购入'"
       @close="closeForm" @save="saveForm" />
@@ -262,7 +256,6 @@ defineExpose({ refresh: load })
   align-items: flex-start;
   justify-content: space-between;
   padding: 16rpx 2rpx 26rpx;
-  
 }
 
 .intro-copy {
@@ -290,34 +283,6 @@ defineExpose({ refresh: load })
   margin-top: 8rpx;
   color: #84938a;
   font-size: 23rpx;
-}
-
-.add-purchase {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  flex-shrink: 0;
-  margin-top: 16rpx;
-  padding: 0 26rpx;
-  height: 64rpx;
-  border: 0;
-  border-radius: 999rpx;
-  background: linear-gradient(135deg, #ff8a3d 0%, #e8542e 100%);
-  color: #fff;
-  font-size: 24rpx;
-  font-weight: 600;
-  line-height: 64rpx;
-  box-shadow: 0 10rpx 22rpx rgba(232, 84, 46, .26);
-}
-
-.add-purchase .app-icon {
-  color: #fff;
-}
-
-.add-purchase:active {
-  transform: scale(.97);
-  opacity: .92;
 }
 
 .add-icon {
@@ -477,7 +442,8 @@ defineExpose({ refresh: load })
   margin-top: 18rpx;
   padding: 6rpx;
   border: 1rpx solid #f0e3d6;
-  border-radius: 16rpx;
+  /* 胶囊型：外轨全圆角（实际渲染会被高度 clamp 到一半，改高度无需同步改圆角） */
+  border-radius: 999rpx;
   background: #fff7f0;
 }
 
@@ -486,11 +452,13 @@ defineExpose({ refresh: load })
   height: 58rpx;
   padding: 0;
   border: 0;
-  border-radius: 11rpx;
+  /* 胶囊滑块，与外轨同心 */
+  border-radius: 999rpx;
   background: transparent;
   color: #a29388;
   font-size: 22rpx;
   line-height: 58rpx;
+  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease;
 }
 
 .view-switch-item::after {
@@ -535,8 +503,6 @@ defineExpose({ refresh: load })
 }
 
 .recipe-row image {
-  width: 84rpx;
-  height: 68rpx;
   border-radius: 12rpx;
   background: #e8eee6;
 }
@@ -735,13 +701,24 @@ defineExpose({ refresh: load })
   line-height: 1.7;
 }
 
-.empty-basket button {
-  width: 330rpx;
-  margin-top: 22rpx;
+/* 空状态按钮组：单按钮胶囊，收窄居中不再占满整行 */
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 34rpx;
 }
 
-.empty-basket .secondary-button {
-  margin-top: 12rpx;
+.empty-actions button {
+  width: 320rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+}
+
+.empty-actions .primary-button {
+  box-shadow: 0 8rpx 18rpx rgba(232, 84, 46, .18);
 }
 </style>
 

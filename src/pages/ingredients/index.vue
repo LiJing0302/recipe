@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, getCurrentInstance, nextTick, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
 import { INGREDIENTS_KITCHEN_CONFIG, kitchenZoneConfigs } from '@/config/ingredients-kitchen'
 import { addInventoryBatch, getFreshness, getInventoryBatches, loadInventoryBatches, updateInventoryBatch } from '@/services/inventory'
 import { filterInventoryByZone, groupInventoryBatches, type IngredientGroup, type InventoryZone } from '@/services/inventory-view'
 import { hideFloatingTabBar, showFloatingTabBar } from '@/services/tabbar'
+import { dropVideoCache, getCachedVideoSrc, primeVideoCache } from '@/services/video-cache'
 import { withLoginRequired } from '@/services/auth-guard'
 import type { IngredientInventoryBatch } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
+const currentInstance = getCurrentInstance()
 
 const batches = ref<IngredientInventoryBatch[]>([])
 const loaded = ref(false)
@@ -22,7 +24,25 @@ const kitchenZones = kitchenZoneConfigs
 const fridgeAlignmentDebug = import.meta.env.DEV && kitchenConfig.fridgeVideo.debugPreview.enabled
 const fridgeVideoActive = ref(false)
 let fridgeVideoContext: ReturnType<typeof uni.createVideoContext> | null = null
-let fridgeReverseTimer: ReturnType<typeof setInterval> | null = null
+let fridgeReverseTimer: ReturnType<typeof setTimeout> | null = null
+let fridgeActiveVideoId: 'fridge-open-video' | 'fridge-close-video' | null = null
+// 播放源：缓存就绪后切成本地路径，避免每次点击都重新走网络。
+const fridgeVideoSrc = ref(getCachedVideoSrc(kitchenConfig.fridgeVideo.src))
+const fridgeCloseVideoSrc = ref(getCachedVideoSrc(kitchenConfig.fridgeVideo.closeSrc))
+// 首帧就绪兜底计时器，见 markFridgeVideoVisible。
+let fridgeVideoReadyTimer: ReturnType<typeof setTimeout> | null = null
+// play() 看门狗，见 armFridgePlayWatchdog。
+let fridgePlayWatchdog: ReturnType<typeof setTimeout> | null = null
+// 切换到小程序关闭视频后，等待原生 video 完成加载再补一次 play()。
+let fridgeClosePlayWatchdog: ReturnType<typeof setTimeout> | null = null
+// 本地缓存播失败后只允许回落远程一次，避免来回抖动。
+let fridgeCacheFallbackUsed = false
+const FRIDGE_VIDEO_DEBUG = false
+const fridgeLog = (...args: unknown[]) => {
+	// #ifdef MP-WEIXIN
+	if (FRIDGE_VIDEO_DEBUG) console.log('[冰箱视频]', ...args)
+	// #endif
+}
 let fridgeVideoCurrentTime = 0
 let fridgeVideoDuration = 0
 const zoneKeys: InventoryZone[] = kitchenZones.map((zone) => zone.key)
@@ -72,13 +92,38 @@ const closeForm = () => { formOpen.value = false; editingBatch.value = undefined
 const openCategories = withLoginRequired(() => uni.navigateTo({ url: '/pages-sub/ingredients/categories' }))
 const openZone = withLoginRequired((zone: InventoryZone) => uni.navigateTo({ url: `/pages-sub/ingredients/storage?zone=${zone}` }))
 const resetFridgeAnimation = () => {
-	if (fridgeReverseTimer) clearInterval(fridgeReverseTimer)
+	if (fridgeReverseTimer) clearTimeout(fridgeReverseTimer)
 	fridgeReverseTimer = null
-	fridgeVideoContext?.stop()
+	if (fridgeVideoReadyTimer) clearTimeout(fridgeVideoReadyTimer)
+	fridgeVideoReadyTimer = null
+	if (fridgePlayWatchdog) clearTimeout(fridgePlayWatchdog)
+	fridgePlayWatchdog = null
+	if (fridgeClosePlayWatchdog) clearTimeout(fridgeClosePlayWatchdog)
+	fridgeClosePlayWatchdog = null
+	const videoContext = fridgeVideoContext
 	fridgeVideoContext = null
+	fridgeActiveVideoId = null
+	videoContext?.stop()
 	fridgeVideoActive.value = false
 	fridgeInteraction.value = 'idle'
+	syncFridgeVideoSrc()
 	showFloatingTabBar()
+}
+/** 从 from 开始逐帧往回 seek，制造倒放效果。 */
+const startFridgeReverseTicks = (from: number) => {
+	// #ifndef MP-WEIXIN
+	let reverseTime = from
+	fridgeReverseTimer = setTimeout(() => {
+		reverseTime -= kitchenConfig.fridgeReverse.stepSeconds
+		if (reverseTime <= 0) {
+			fridgeVideoContext?.seek(0)
+			resetFridgeAnimation()
+			return
+		}
+		fridgeVideoContext?.seek(reverseTime)
+		startFridgeReverseTicks(reverseTime)
+	}, kitchenConfig.fridgeReverse.tickMs)
+	// #endif
 }
 const closeFridgeAnimation = () => {
 	if (fridgeInteraction.value === 'idle' || fridgeInteraction.value === 'closing') return
@@ -88,45 +133,205 @@ const closeFridgeAnimation = () => {
 	}
 
 	fridgeInteraction.value = 'closing'
+	fridgeLog('播放关闭动画')
+	// #ifdef MP-WEIXIN
+	// 小程序端切换到预生成的倒序视频，始终正向播放，不依赖原生 video 的反向 seek。
+	const videoContext = fridgeVideoContext
+	fridgeVideoContext = null
+	fridgeActiveVideoId = null
+	videoContext?.stop()
+	fridgeVideoCurrentTime = 0
+	fridgeVideoDuration = 0
+	nextTick(() => {
+		if (fridgeInteraction.value !== 'closing') return
+		fridgeActiveVideoId = 'fridge-close-video'
+		fridgeVideoContext = createFridgeVideoContext('fridge-close-video')
+		fridgeVideoContext?.play()
+		// src 切换后原生 video 可能还没加载完成，第一次 play() 会被吞掉。
+		fridgeClosePlayWatchdog = setTimeout(() => {
+			fridgeClosePlayWatchdog = null
+			if (fridgeInteraction.value === 'closing') fridgeVideoContext?.play()
+		}, 450)
+	})
+	// #endif
+	// #ifndef MP-WEIXIN
+	const startAt = Math.max(fridgeVideoCurrentTime, fridgeVideoDuration, kitchenConfig.fridgeReverse.fallbackDurationSeconds)
 	fridgeVideoContext?.pause()
-	let reverseTime = Math.max(fridgeVideoCurrentTime, fridgeVideoDuration, kitchenConfig.fridgeReverse.fallbackDurationSeconds)
-	fridgeVideoContext?.seek(reverseTime)
-	fridgeReverseTimer = setInterval(() => {
-		reverseTime -= kitchenConfig.fridgeReverse.stepSeconds
-		if (reverseTime <= 0) {
-			fridgeVideoContext?.seek(0)
-			resetFridgeAnimation()
-			return
-		}
-		fridgeVideoContext?.seek(reverseTime)
-	}, kitchenConfig.fridgeReverse.tickMs)
+	fridgeVideoContext?.seek(startAt)
+	startFridgeReverseTicks(startAt)
+	// #endif
+}
+/**
+ * 空 <video> 元素渲染出来就是黑盒，没有 poster 的情况下一淡入就是黑屏。
+ * 所以 reveal 动画推迟到首帧真正就绪之后再走（loadedmetadata / 首次 timeupdate）。
+ */
+const markFridgeVideoVisible = () => {
+	if (fridgeVideoReadyTimer) {
+		clearTimeout(fridgeVideoReadyTimer)
+		fridgeVideoReadyTimer = null
+	}
+	if (fridgeInteraction.value !== 'idle') fridgeVideoActive.value = true
+}
+/**
+ * play() 偶尔会被原生组件吞掉：文件加载好了、首帧也出来了，就是不动。
+ * 这里 500ms 后若仍无进度就补一枪；再过 1.2s 还是不动，就直接跳到 opened，
+ * 免得用户卡在一个半开的冰箱上什么都点不到。
+ */
+const armFridgePlayWatchdog = () => {
+	if (fridgePlayWatchdog) clearTimeout(fridgePlayWatchdog)
+	// 本地文件起播极快，350ms 还没进度基本就是没戏了，别让用户干等。
+	fridgePlayWatchdog = setTimeout(() => {
+		if (fridgeInteraction.value === 'idle' || fridgeVideoCurrentTime > 0) return
+		fridgeLog('350ms 无进度，补一次 play()')
+		fridgeVideoContext?.play()
+		fridgePlayWatchdog = setTimeout(() => {
+			fridgePlayWatchdog = null
+			if (fridgeInteraction.value !== 'opening' || !fridgeVideoActive.value || fridgeVideoCurrentTime > 0) return
+			// 首帧都出来了还不动，先怀疑本地缓存文件本身播不了：丢掉缓存，
+			// 换回远程地址重开一次，而不是干等着或直接弹窗。
+			if (fridgeVideoSrc.value !== kitchenConfig.fridgeVideo.src && !fridgeCacheFallbackUsed) {
+				fridgeLog('本地文件无法播放，丢弃缓存并回落远程重开')
+				fridgeCacheFallbackUsed = true
+				dropVideoCache(kitchenConfig.fridgeVideo.src)
+				resetFridgeAnimation()
+				nextTick(openFridge)
+				return
+			}
+			fridgeLog('播放仍无进展，跳过动画直接打开冰箱')
+			fridgeInteraction.value = 'opened'
+		}, 750)
+	}, 350)
+}
+/**
+ * 创建冰箱视频的上下文。**自定义组件内的 video 必须带上组件实例**。
+ *
+ * 不传第二个参数时，小程序端只在「页面」范围内查找该 id；而 fridge-open-video
+ * 位于 IngredientsTab 这个自定义组件内，页面级查找不到，返回的是空壳 context ——
+ * play() / seek() 全部静默失效：loadedmetadata 照常触发、首帧照常渲染、@error 不来，
+ * 但 currentTime 永远是 0，看起来就像"视频加载好了却死活不播"。
+ *
+ * 小程序端要的是小程序组件实例，uni-app 挂在 proxy.$scope 上；H5 端没有 $scope，
+ * 回落到 Vue 组件实例即可（H5 端是按 pageId + id 全局查找元素的）。
+ */
+const createFridgeVideoContext = (videoId = 'fridge-open-video') => {
+	const vm = currentInstance?.proxy as unknown as { $scope?: unknown } | undefined
+	const scope = vm?.$scope
+	fridgeLog('createVideoContext 组件实例 $scope =', Boolean(scope))
+	return uni.createVideoContext(videoId, scope ?? vm)
 }
 const startFridgeVideo = () => {
 	hideFloatingTabBar()
-	fridgeVideoContext = uni.createVideoContext('fridge-open-video')
-	fridgeVideoActive.value = true
+	fridgeActiveVideoId = 'fridge-open-video'
+	fridgeVideoContext = createFridgeVideoContext()
 	fridgeVideoCurrentTime = 0
 	fridgeVideoDuration = 0
+	fridgeLog('准备播放，本地缓存 =', fridgeVideoSrc.value !== kitchenConfig.fridgeVideo.src, fridgeVideoSrc.value)
 	fridgeVideoContext?.playbackRate(kitchenConfig.fridgeVideo.playbackRate)
 	fridgeVideoContext.play()
+	// 兜底：缓存命中时通常几十毫秒就绪；万一事件没回调，最多等 2s 也要开始淡入，
+	// 免得用户点了没反应。
+	fridgeVideoReadyTimer = setTimeout(markFridgeVideoVisible, 2000)
+	armFridgePlayWatchdog()
 }
 const openFridge = withLoginRequired(() => {
 	if (fridgeInteraction.value !== 'idle') return
 	fridgeInteraction.value = 'opening'
+	fridgeCacheFallbackUsed = false
+	// 必须停在 nextTick（微任务）里起播，不能套 setTimeout：宏任务会丢掉用户手势上下文，
+	// 小程序 video 的 play() 在非交互上下文里会被静默丢弃 —— 表现为"首帧出来了但死活不播"。
 	nextTick(startFridgeVideo)
 })
-const handleFridgeVideoTimeUpdate = (event: { detail?: { currentTime?: number; duration?: number } }) => {
+type FridgeVideoEvent = {
+	currentTarget?: { id?: string }
+	target?: { id?: string }
+	detail?: { currentTime?: number; duration?: number }
+}
+const isActiveFridgeVideoEvent = (event: FridgeVideoEvent) => {
+	if (!fridgeActiveVideoId) return false
+	const eventId = event.currentTarget?.id || event.target?.id
+	return !eventId || eventId === fridgeActiveVideoId
+}
+const handleFridgeVideoTimeUpdate = (event: FridgeVideoEvent) => {
+	if (!isActiveFridgeVideoEvent(event)) return
+	// 有进度推送说明已经在放画面了，同样可以安全淡入（loadedmetadata 的兜底）。
+	if (!fridgeVideoActive.value) markFridgeVideoVisible()
 	const currentTime = event.detail?.currentTime
 	const duration = event.detail?.duration
-	if (typeof currentTime === 'number') fridgeVideoCurrentTime = currentTime
+	if (typeof currentTime === 'number') {
+		fridgeVideoCurrentTime = currentTime
+		if (fridgeInteraction.value === 'closing' && currentTime > 0 && fridgeClosePlayWatchdog) {
+			clearTimeout(fridgeClosePlayWatchdog)
+			fridgeClosePlayWatchdog = null
+		}
+	}
 	if (typeof duration === 'number' && duration > 0) fridgeVideoDuration = duration
 }
-const handleFridgeVideoEnded = () => { fridgeInteraction.value = 'opened' }
-const handleFridgeVideoError = () => { fridgeVideoActive.value = false; fridgeInteraction.value = 'opened' }
+const handleFridgeVideoLoadedMetadata = (event: FridgeVideoEvent) => {
+	if (!isActiveFridgeVideoEvent(event)) return
+	fridgeLog('loadedmetadata（首帧就绪）')
+	// 关闭视频是切换 src 后才挂载的，必须等资源就绪后再调用 play()。
+	if (fridgeInteraction.value === 'closing' && fridgeActiveVideoId === 'fridge-close-video') {
+		if (fridgeClosePlayWatchdog) clearTimeout(fridgeClosePlayWatchdog)
+		fridgeClosePlayWatchdog = null
+		fridgeVideoContext?.play()
+	}
+	nextTick(markFridgeVideoVisible)
+}
+const handleFridgeVideoEnded = (event: FridgeVideoEvent) => {
+	if (!isActiveFridgeVideoEvent(event)) return
+	fridgeLog('ended，时长', fridgeVideoDuration)
+	if (fridgeInteraction.value === 'closing') {
+		if (fridgeClosePlayWatchdog) clearTimeout(fridgeClosePlayWatchdog)
+		fridgeClosePlayWatchdog = null
+		resetFridgeAnimation()
+		return
+	}
+	markFridgeVideoVisible()
+	fridgeInteraction.value = 'opened'
+}
+const handleFridgeVideoError = (event: FridgeVideoEvent) => {
+	if (!isActiveFridgeVideoEvent(event)) return
+	if (fridgeInteraction.value === 'closing') {
+		resetFridgeAnimation()
+		return
+	}
+	// 本地缓存文件读不了（被系统清理、后缀丢失导致格式识别失败）就丢掉记录，
+	// 换回远程地址自动重开一次，别卡在一个坏文件上反复失败。
+	const usingCache = fridgeVideoSrc.value !== kitchenConfig.fridgeVideo.src
+	if (usingCache) dropVideoCache(kitchenConfig.fridgeVideo.src)
+	fridgeVideoActive.value = false
+	if (usingCache && !fridgeCacheFallbackUsed) {
+		fridgeCacheFallbackUsed = true
+		resetFridgeAnimation()
+		nextTick(openFridge)
+		return
+	}
+	fridgeInteraction.value = 'opened'
+}
 const openFridgeList = () => { resetFridgeAnimation(); openZone('fridge') }
 const handleZoneClick = (zone: InventoryZone) => {
 	if (zone === 'fridge') openFridge()
 	else openZone(zone)
+}
+/**
+ * 把播放源切到已缓存的本地路径。播放过程中绝不能改 src，
+ * 否则 video 会重新加载，反而又黑一次。
+ */
+const syncFridgeVideoSrc = () => {
+	if (fridgeInteraction.value !== 'idle') return
+	fridgeVideoSrc.value = getCachedVideoSrc(kitchenConfig.fridgeVideo.src)
+	fridgeCloseVideoSrc.value = getCachedVideoSrc(kitchenConfig.fridgeVideo.closeSrc)
+}
+/**
+ * 提前把冰箱视频下载到本地，点击时直接读本地文件播放。
+ * 后端接口不支持 Range，边下边播必然有空窗，缓存是唯一能彻底消掉黑屏的办法。
+ */
+const primeFridgeVideo = async () => {
+	await Promise.all([
+		primeVideoCache(kitchenConfig.fridgeVideo.src),
+		primeVideoCache(kitchenConfig.fridgeVideo.closeSrc)
+	])
+	syncFridgeVideoSrc()
 }
 const setPageScrollLock = (locked: boolean) => {
 	// #ifdef H5
@@ -150,6 +355,8 @@ watch(() => props.active, (active) => {
 	if (active) {
 		showFloatingTabBar()
 		if (!loaded.value) void load()
+		// 切到食材库就开始后台缓存视频，等到用户点冰箱时基本已经落盘。
+		void primeFridgeVideo()
 	} else {
 		resetFridgeAnimation()
 	}
@@ -160,7 +367,7 @@ defineExpose({ refresh: load })
 <template>
 	<view class="kitchen-page" :style="kitchenCssVars">
 		<view class="kitchen-scene"
-			:class="{ 'is-fridge-opening': fridgeInteraction === 'opening', 'is-fridge-opened': fridgeInteraction === 'opened', 'is-video-active': fridgeVideoActive, 'is-fridge-debug-preview': fridgeAlignmentDebug }"
+			:class="{ 'is-fridge-opening': fridgeInteraction === 'opening', 'is-fridge-opened': fridgeInteraction === 'opened', 'is-fridge-closing': fridgeInteraction === 'closing', 'is-video-active': fridgeVideoActive, 'is-fridge-debug-preview': fridgeAlignmentDebug }"
 			aria-label="厨房食材存放区域">
 			<view class="kitchen-media-canvas">
 				<view class="kitchen-background">
@@ -174,14 +381,37 @@ defineExpose({ refresh: load })
 					</view>
 					<view class="kitchen-main-region">
 						<image class="kitchen-main-image" :src="kitchenConfig.background.main.src" mode="scaleToFill" />
+						<!-- #ifndef MP-WEIXIN -->
 						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle'" id="fridge-open-video"
-							class="fridge-animation-video" :src="kitchenConfig.fridgeVideo.src" :autoplay="false"
+							class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
 							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
 							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-							:object-fit="kitchenConfig.fridgeVideo.objectFit"
+								:object-fit="kitchenConfig.fridgeVideo.objectFit"
 							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
-							@timeupdate="handleFridgeVideoTimeUpdate" @ended="handleFridgeVideoEnded"
-							@error="handleFridgeVideoError" />
+								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+								@ended="handleFridgeVideoEnded"
+								@error="handleFridgeVideoError" />
+						<!-- #endif -->
+						<!-- #ifdef MP-WEIXIN -->
+						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle' && fridgeInteraction !== 'closing'"
+							id="fridge-open-video" class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
+							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
+							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
+								:object-fit="kitchenConfig.fridgeVideo.objectFit"
+							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+								@ended="handleFridgeVideoEnded"
+								@error="handleFridgeVideoError" />
+						<video v-if="fridgeInteraction === 'closing'" id="fridge-close-video"
+							class="fridge-animation-video" :src="fridgeCloseVideoSrc" :autoplay="true"
+							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
+							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
+								:object-fit="kitchenConfig.fridgeVideo.objectFit"
+							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+								@ended="handleFridgeVideoEnded"
+								@error="handleFridgeVideoError" />
+						<!-- #endif -->
 						<view class="main-overlay">
 							<view v-for="zone in kitchenZones" :key="zone.key" class="scene-hotspot"
 								:style="getZoneHotspotStyle(zone)" :aria-label="zone.ariaLabel"
@@ -343,7 +573,8 @@ defineExpose({ refresh: load })
 }
 
 .kitchen-scene.is-fridge-opening .kitchen-media-canvas,
-.kitchen-scene.is-fridge-opened .kitchen-media-canvas {
+.kitchen-scene.is-fridge-opened .kitchen-media-canvas,
+.kitchen-scene.is-fridge-closing .kitchen-media-canvas {
 	transform: var(--kitchen-canvas-focus-transform);
 }
 
@@ -359,14 +590,18 @@ defineExpose({ refresh: load })
 	transition: opacity var(--kitchen-overlay-transition), visibility 0s linear var(--kitchen-overlay-transition);
 }
 
-.kitchen-scene.is-fridge-opened .kitchen-background {
+.kitchen-scene.is-fridge-opened .kitchen-background,
+.kitchen-scene.is-fridge-closing .kitchen-background {
 	opacity: 1;
 	transition: opacity var(--kitchen-background-opacity-transition), filter var(--kitchen-background-transition);
 }
 
 .kitchen-scene.is-fridge-opened .kitchen-top-blank-image,
 .kitchen-scene.is-fridge-opened .kitchen-main-image,
-.kitchen-scene.is-fridge-opened .kitchen-bottom-floor-image {
+.kitchen-scene.is-fridge-opened .kitchen-bottom-floor-image,
+.kitchen-scene.is-fridge-closing .kitchen-top-blank-image,
+.kitchen-scene.is-fridge-closing .kitchen-main-image,
+.kitchen-scene.is-fridge-closing .kitchen-bottom-floor-image {
 	filter: blur(var(--kitchen-background-blur));
 }
 
@@ -385,7 +620,8 @@ defineExpose({ refresh: load })
 
 .scene-topbar {
 	position: absolute;
-	top: 12rpx;
+	/* 顶部预留：状态栏高度 + 小程序右上角胶囊按钮高度，避免食材库卡片/分类/添加按钮与胶囊重叠 */
+	top: calc(var(--safe-top) + var(--capsule-h, 0px) + 12rpx);
 	left: 4%;
 	right: 4%;
 	min-height: 84rpx;

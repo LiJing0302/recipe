@@ -37,6 +37,30 @@ $shadow-card: 0 12rpx 32rpx rgba(214, 96, 44, .08);
 $shadow-float: 0 20rpx 48rpx rgba(214, 96, 44, .14);
 $shadow-brand: 0 14rpx 30rpx rgba(232, 84, 46, .28);
 
+// ---- 编辑器扩展令牌（RecipeEditor 及抽出的子组件复用，保持原 hex 不变）----
+$ink-eyebrow: #8b948b;          // eyebrow 次级说明文字
+$gold-deep: #b8862f;            // 琥珀金（深，kicker/eyebrow）
+$amber: #a36f2b;                // 琥珀（警告/提示）
+$ink-hint: #c9b8a8;             // 占位/弱提示
+$ink-field: #6f7d73;            // 字段标签
+$ink-deep: #34473f;             // 输入框文字（绿调）
+$ink-sage: #4a5d52;             // 建议描述文字
+$ink-tan: #8a7a70;              // 建议小贴士/分类文字
+$line-warm: #f5e9dd;            // 暖边框
+$line-cool: #e3e9e1;            // 中性边框
+$surface-soft: #f7ede3;         // 柔和表面（主图/图片占位）
+$surface-tint: #fff8f3;          // 浅暖表面（关闭按钮底）
+$surface-suggest: #fffaf7;       // 建议卡片底
+$line-suggest: #f0d6c8;         // 建议卡片边框
+$sage-mist: #dceadd;            // 步骤序号底
+$shadow-brand-soft: 0 4rpx 10rpx rgba(232, 84, 46, .08);
+
+// ---- 圆角补充 ----
+$radius-12: 12rpx;
+$radius-14: 14rpx;
+$radius-18: 18rpx;
+$radius-48: 48rpx;
+
 // ============================================================
 // uview-plus 主题变量同步（需在 import 之前定义）
 // ============================================================

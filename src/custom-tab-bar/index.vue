@@ -56,15 +56,15 @@ const switchTab = (index: number) => switchAppTab(index as AppTabIndex)
   width: 100%;
   height: 112rpx;
   padding: 8rpx;
-  border: 1rpx solid rgba(255, 255, 255, .85);
+  border: 1rpx solid rgba(255, 255, 255, .5);
   border-radius: 999rpx; /* 胶囊：两端完整半圆 */
-  /* 半透明基底：即便设备不支持 backdrop-filter，也能呈现柔和的磨砂质感 */
-  background: rgba(255, 255, 255, .66);
-  box-shadow: 0 18rpx 46rpx rgba(79, 58, 44, .18), 0 3rpx 12rpx rgba(255, 255, 255, .55) inset;
+  /* 橙色调半透明基底：与菜篮子悬浮 FAB 一致的磨砂玻璃质感 */
+  background: rgba(240, 131, 58, 0.175);
+  box-shadow: 0 12rpx 30rpx rgba(232, 84, 46, .22);
   box-sizing: border-box;
   overflow: hidden;
-  -webkit-backdrop-filter: blur(28px) saturate(165%);
-  backdrop-filter: blur(28px) saturate(165%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
   pointer-events: auto;
 }
 
@@ -108,6 +108,7 @@ const switchTab = (index: number) => switchAppTab(index as AppTabIndex)
 
 .tabbar-item.active .tabbar-icon {
   opacity: 1;
+  filter: none; /* 选中态使用自带橙色图标，不染色 */
 }
 
 .tabbar-label {

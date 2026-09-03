@@ -127,7 +127,7 @@ defineExpose({ refresh: load })
                 '这一餐还留着'
                 }}</text></view>
             <text class="meal-status">{{ menuByMeal[meal.value].length ? `${menuByMeal[meal.value].length} 道` : '空白'
-            }}</text>
+              }}</text>
           </view>
           <view class="meal-detail">
             <view v-for="item in menuByMeal[meal.value]" :key="item.id" class="dish-card">
@@ -154,7 +154,7 @@ defineExpose({ refresh: load })
               </view>
               <view><text class="empty-title">这一餐还留着</text><text class="empty-desc">从食谱里挑一道，放进今天的故事</text></view>
               <view class="empty-arrow" @click="openRecipes">
-                <AppIcon name="arrow-up-right" size="md" />
+                <AppIcon name="plus" size="md" />
               </view>
             </view>
           </view>

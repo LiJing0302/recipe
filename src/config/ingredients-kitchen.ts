@@ -49,6 +49,7 @@ export type KitchenSkinConfig = {
   };
   fridgeVideo: {
     src: string;
+    closeSrc: string;
     // 定位相对于该皮肤的主体区域左上角，不是屏幕左上角。
     anchor: { x: string; y: string };
     width: string;
@@ -124,6 +125,7 @@ export const KITCHEN_SKINS = {
     },
     fridgeVideo: {
       src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/fridge-open.mp4`),
+      closeSrc: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-1/fridge-close.mp4`),
       anchor: { x: "28%", y: "-1.4%" },
       width: "59.6%",
       aspectRatio: "720 / 1192",
@@ -197,6 +199,7 @@ export const KITCHEN_SKINS = {
     },
     fridgeVideo: {
       src: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/fridge-open.mp4`),
+      closeSrc: kitchenAssetUrl(`${kitchenAssetPrefix}/skin-2/fridge-close.mp4`),
       // 第二套视频是 720 x 964，尺寸、比例、位置全部独立维护。
       anchor: { x: "21%", y: "1.3%" },
       width: "70.5%",

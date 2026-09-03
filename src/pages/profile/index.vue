@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import AuthPanel from '@/components/AuthPanel.vue'
 import { getCookingRecords } from '@/services/cooking'
-import { clearAuthSession, getCurrentUser, isAuthenticated } from '@/services/storage'
+import { clearAuthSession, getCurrentUser, isAuthenticated, saveCurrentUser } from '@/services/storage'
 import type { CookingRecord, UserProfile } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
@@ -34,19 +34,49 @@ watch(() => props.active, (active) => { if (active && !loaded.value) void load()
 defineExpose({ refresh: load })
 const handleAuthenticated = (nextUser: UserProfile) => { user.value = nextUser; authenticated.value = true; void load() }
 const logout = () => { clearAuthSession(); authenticated.value = false; records.value = []; uni.showToast({ title: '已退出登录', icon: 'none' }) }
+
+const showEdit = ref(false)
+const editName = ref('')
+const editBio = ref('')
+const openEdit = () => { editName.value = user.value.name; editBio.value = user.value.bio; showEdit.value = true }
+const saveEdit = () => {
+  if (!editName.value.trim()) return uni.showToast({ title: '昵称不能为空', icon: 'none' })
+  const updated: UserProfile = { ...user.value, name: editName.value.trim(), bio: editBio.value.trim() }
+  saveCurrentUser(updated)
+  user.value = getCurrentUser()
+  showEdit.value = false
+  uni.showToast({ title: '已保存', icon: 'success' })
+}
 </script>
 
 <template>
   <AuthPanel v-if="!authenticated" @authenticated="handleAuthenticated" />
   <view v-else class="page-shell profile-page">
-    <view class="profile-hero"><view class="profile-kicker-row"><text class="profile-kicker">MY KITCHEN</text><AppIcon name="spark" size="sm" /></view><view class="profile-head"><view class="avatar-wrap"><image :src="user.avatar" mode="aspectFill" /></view><view class="profile-copy"><text class="profile-name">{{ user.name }}</text><text class="profile-bio">{{ user.bio || '认真吃饭，也认真生活' }}</text></view><view class="edit"><AppIcon name="pencil" size="sm" /><text>编辑资料</text></view></view><view class="profile-stats"><view><text class="number">{{ totalCooking }}</text><text class="label">累计烹饪</text></view><view class="stats-divider" /><view><text class="number">{{ cookingDays }}</text><text class="label">烹饪日</text></view></view></view>
+    <view class="profile-hero"><view class="profile-kicker-row"><text class="profile-kicker">MY KITCHEN</text><AppIcon name="spark" size="sm" /></view><view class="profile-head"><view class="avatar-wrap"><image :src="user.avatar" mode="aspectFill" /></view><view class="profile-copy"><text class="profile-name">{{ user.name }}</text><text class="profile-bio">{{ user.bio || '认真吃饭，也认真生活' }}</text></view><view class="edit" @click="openEdit"><AppIcon name="pencil" size="sm" /><text>编辑资料</text></view></view><view class="profile-stats"><view><text class="number">{{ totalCooking }}</text><text class="label">累计烹饪</text></view><view class="stats-divider" /><view><text class="number">{{ cookingDays }}</text><text class="label">烹饪日</text></view></view></view>
     <view class="settings"><view><view class="setting-icon"><AppIcon name="info" size="md" /></view><text>关于食光</text><text class="version">v0.1.0</text><AppIcon name="chevron-right" size="sm" /></view></view>
     <view class="logout" @click="logout"><AppIcon name="arrow-up-right" size="sm" /><text>退出登录</text></view>
+    <view v-if="showEdit" class="modal-mask" @click.self="showEdit = false">
+      <view class="edit-popup">
+        <text class="modal-title">编辑资料</text>
+        <view class="edit-field">
+          <text class="edit-label">昵称</text>
+          <input v-model="editName" class="edit-input" maxlength="20" placeholder="你的昵称" />
+        </view>
+        <view class="edit-field">
+          <text class="edit-label">个性签名</text>
+          <textarea v-model="editBio" class="edit-textarea" maxlength="60" placeholder="一句话介绍自己" />
+        </view>
+        <view class="edit-actions">
+          <button class="secondary-button" @click="showEdit = false">取消</button>
+          <button class="primary-button" @click="saveEdit">保存</button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.profile-page { padding-top: 28rpx; }
+.profile-page { padding-top: calc(var(--safe-top) + var(--capsule-h, 0px) + 28rpx); }
 .profile-hero { margin: 10rpx 0 0; padding: 30rpx 26rpx 26rpx; border-radius: 28rpx; background: linear-gradient(135deg, #ff8a3d, #e8542e); box-shadow: 0 18rpx 36rpx rgba(232, 84, 46, .2); }
 .profile-kicker { display: block; color: #bbddcc; font-size: 18rpx; font-weight: 600; letter-spacing: 2rpx; }
 .profile-head { display: flex; align-items: center; gap: 18rpx; margin-top: 20rpx; }
@@ -67,10 +97,19 @@ const logout = () => { clearAuthSession(); authenticated.value = false; records.
 .about-icon::after { position: absolute; top: 9rpx; left: 16rpx; width: 6rpx; height: 19rpx; border-radius: 999rpx; background: #dd8d5f; content: ''; }
 .version { margin-left: auto; color: #96a39b; font-size: 20rpx; }
 .logout { display: block; margin: 32rpx 0; color: #c06c61; font-size: 22rpx; text-align: center; }
+.edit { cursor: pointer; }
+.modal-mask { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(23, 34, 30, .35); }
+.edit-popup { width: 100%; padding: 36rpx 28rpx calc(28rpx + env(safe-area-inset-bottom)); border-radius: 36rpx 36rpx 0 0; background: #fff; box-sizing: border-box; }
+.edit-field { margin-top: 26rpx; }
+.edit-label { display: block; margin-bottom: 12rpx; color: #6f5f54; font-size: 22rpx; font-weight: 600; }
+.edit-input { height: 76rpx; padding: 0 20rpx; border: 1rpx solid #e0ebe3; border-radius: 14rpx; color: #34473f; font-size: 24rpx; background: #f7faf7; box-sizing: border-box; }
+.edit-textarea { width: 100%; height: 140rpx; padding: 16rpx 20rpx; border: 1rpx solid #e0ebe3; border-radius: 14rpx; color: #34473f; font-size: 24rpx; background: #f7faf7; box-sizing: border-box; }
+.edit-actions { display: flex; gap: 18rpx; margin-top: 32rpx; }
+.edit-actions .primary-button, .edit-actions .secondary-button { flex: 1; }
 </style>
 
 <style scoped>
-.profile-page { padding-top: 24rpx; }
+.profile-page { padding-top: calc(var(--safe-top) + var(--capsule-h, 0px) + 24rpx); }
 .profile-hero { margin-top: 8rpx; border: 1rpx solid #d84a28; background: linear-gradient(135deg, #ff8a3d 0%, #e8542e 62%, #d84a28 100%); box-shadow: 0 18rpx 36rpx rgba(232, 84, 46, .22); }
 .profile-kicker-row { display: flex; align-items: center; justify-content: space-between; }
 .profile-kicker { color: rgba(255, 255, 255, .82); }

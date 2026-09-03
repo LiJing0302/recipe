@@ -4,6 +4,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import CategorySplit from '@/components/CategorySplit.vue'
 import RecipeCard from '@/components/RecipeCard.vue'
 import { DEFAULT_FAMILY_CATEGORY, FAMILY_CATEGORIES } from '@/constants/recipe'
+import { API_BASE_URL } from '@/config'
 import { createRecipeCategory, createShareLink, deleteRecipeCategory, fetchCommunityRecipes, fetchMyRecipeCategories, fetchMyRecipes, fetchPublicRecipeCategories, isCollected, loadCollections, toggleCollection, updateRecipeCategory } from '@/services/recipe'
 import { clearAuthSession, getCurrentUser, isAuthenticated } from '@/services/storage'
 import type { Recipe, RecipeCategory, UserRecipeCategory } from '@/types'
@@ -24,6 +25,7 @@ const categoryDraft = ref('')
 const categorySaving = ref(false)
 const shareId = ref('')
 const loaded = ref(false)
+const recipeBackdropSrc = `${API_BASE_URL}/uploads/object?key=${encodeURIComponent('recipes/assets/recipes-backdrop.png')}`
 
 const categoryNames = computed(() => new Set((authenticated.value ? userCategories.value : defaultCategories.value).map((category) => category.name)))
 
@@ -43,6 +45,7 @@ const categoryItems = computed(() => {
 })
 const visibleRecipes = computed(() => recipes.value.filter((recipe) => categoriesFor(recipe).includes(activeCategory.value)))
 const collected = computed(() => Object.fromEntries(recipes.value.map((recipe) => [recipe.id, isCollected(recipe.id)])))
+const recipeTitle = computed(() => (authenticated.value ? `${getCurrentUser().name} 的食谱` : '精选食谱'))
 const loadPublicContent = async () => {
   const [nextRecipes, nextCategories] = await Promise.all([fetchCommunityRecipes(), fetchPublicRecipeCategories()])
   recipes.value = nextRecipes
@@ -174,64 +177,70 @@ defineExpose({
 
 <template>
   <view class="page-shell my-page">
-    <view class="recipe-page-scroll">
-      <view class="recipe-backdrop">
-        <view class="recipe-fixed-top">
-          <view class="header-row">
-            <view class="header-actions">
-              <view class="nav-action community-action" aria-label="打开广场" title="打开广场" @click="openCommunity">
-                <AppIcon name="community" size="sm" /><text>广场</text>
+
+    <!-- 背景图区域：占据顶部 ~540rpx，跟着外层滚动被 sheet 盖住。
+         内容顺序：image 主体 → fade 蒙版（顶部更白让 header 文字清晰；底部略白让 sheet 自然过渡）→ handle 提示 -->
+    <view class="recipe-backdrop">
+      <image class="recipe-backdrop-img" :src="recipeBackdropSrc" mode="aspectFill" />
+    </view>
+
+    <!-- 列表 sheet：跟随外层滚动；自身高度 = 视口，外层滚到底时 backdrop 完全被本 sheet 盖住。
+         顶部贴 36rpx 圆角 + 拉把，提示可滚动；scroll-region 由内层 scroll-view 接管列表内部滚动 -->
+    <view class="recipe-sheet">
+      <view class="recipe-sheet-handle" aria-hidden="true" />
+      <view class="recipe-scroll-region">
+        <view v-if="loading" class="empty-state">正在加载食谱...</view>
+        <view v-else class="recipe-category-host">
+          <!-- 顶部：标题行（标题 + 操作按钮）叠在背景图之上，跟着外层滚动；fade 蒙版给可读性 -->
+          <view class="recipe-top">
+            <view class="recipe-head">
+              <view class="recipe-heading">
+                <text class="recipe-heading-title">{{ recipeTitle }}</text>
               </view>
-              <view v-if="authenticated" class="recipe-actions">
-                <!-- #ifdef MP-WEIXIN --><button class="icon-action share-button" :disabled="!shareId" open-type="share"
-                  aria-label="分享菜谱" title="分享菜谱">
-                  <AppIcon name="share" size="md" />
-                </button><!-- #endif -->
-                <!-- #ifdef H5 -->
-                <view class="icon-action share-button" aria-label="分享菜谱" title="分享菜谱" @click="shareRecipes">
-                  <AppIcon name="share" size="md" />
-                </view><!-- #endif -->
-                <view class="icon-action manage-button" aria-label="管理分类" title="管理分类" @click="openCategoryManager">
-                  <AppIcon name="settings" size="md" />
+              <view class="header-actions">
+                <view class="nav-action community-action" aria-label="打开广场" title="打开广场" @click="openCommunity">
+                  <AppIcon name="community" size="sm" /><text>广场</text>
                 </view>
-                <view class="icon-action add-button" aria-label="新建食谱" title="新建食谱"
-                  @click="uni.navigateTo({ url: '/pages-sub/recipe/edit' })">
-                  <AppIcon name="plus" size="md" />
+                <view v-if="authenticated" class="recipe-actions">
+                  <!-- #ifdef MP-WEIXIN --><button class="icon-action share-button" :disabled="!shareId"
+                    open-type="share" aria-label="分享菜谱" title="分享菜谱">
+                    <AppIcon name="share" size="sm" />
+                  </button><!-- #endif -->
+                  <!-- #ifdef H5 -->
+                  <view class="icon-action share-button" aria-label="分享菜谱" title="分享菜谱" @click="shareRecipes">
+                    <AppIcon name="share" size="sm" />
+                  </view><!-- #endif -->
+                  <view class="icon-action manage-button" aria-label="管理分类" title="管理分类" @click="openCategoryManager">
+                    <AppIcon name="settings" size="sm" />
+                  </view>
+                  <view class="icon-action add-button" aria-label="新建食谱" title="新建食谱"
+                    @click="uni.navigateTo({ url: '/pages-sub/recipe/edit' })">
+                    <AppIcon name="plus" size="sm" />
+                  </view>
                 </view>
               </view>
             </view>
-          </view>
-          <view v-if="authenticated" class="recipe-filter">
-            <view class="filter-copy"><text class="filter-title">显示范围</text><text class="filter-desc">{{ includeImported
-              ? '包含广场导入食谱' : '只显示我的原创食谱' }}</text></view>
-            <switch :checked="includeImported" color="#e8542e" @change="toggleImported" />
-          </view>
-          <view v-if="authenticated" class="recipe-stats" v-show="false">
-            <view><text class="recipe-stat-number">{{ recipes.length }}</text><text class="recipe-stat-label">已收藏</text>
+            <view class="recipe-filter">
+              <view class="filter-copy"><text class="filter-title">显示范围</text><text class="filter-desc">{{
+                includeImported
+                  ? '含导入食谱' : '仅我的原创' }}</text></view>
+              <switch class="scope-switch" :checked="includeImported" color="#e8542e" @change="toggleImported" />
             </view>
-            <view class="recipe-stat-divider" />
-            <view><text class="recipe-stat-number">{{ categoryItems.length }}</text><text
-                class="recipe-stat-label">个分类</text></view>
-            <view class="recipe-stat-tip">慢慢积累<br />你的味道</view>
           </view>
-        </view>
-      </view>
-      <view class="recipe-sheet">
-        <view class="recipe-scroll-region">
-          <view v-if="loading" class="empty-state">正在加载食谱...</view>
-          <view v-else class="recipe-category-host">
-            <CategorySplit class="category-fill" :categories="categoryItems" :active-category="activeCategory" :total="visibleRecipes.length"
-              :total-label="`${visibleRecipes.length} 道菜`" :eyebrow="authenticated ? 'MY RECIPES' : 'FEATURED RECIPES'" @select="selectCategory">
-              <view v-if="!visibleRecipes.length" class="empty-state">这个分类暂时没有菜品</view>
-              <view v-else class="feed">
-                <RecipeCard v-for="recipe in visibleRecipes" :key="recipe.id" :recipe="recipe" hide-edit hide-rating
-                  :readonly="!authenticated" :collected="collected[recipe.id]" @open="openRecipe" @toggle-collect="collect" @edit="editRecipe" />
-              </view>
-            </CategorySplit>
-          </view>
+          <CategorySplit class="category-fill" :categories="categoryItems" :active-category="activeCategory"
+            :total="visibleRecipes.length" :total-label="`${visibleRecipes.length} 道菜`"
+            :eyebrow="authenticated ? 'MY RECIPES' : 'FEATURED RECIPES'" @select="selectCategory">
+            <view v-if="!visibleRecipes.length" class="empty-state">这个分类暂时没有菜品</view>
+            <view v-else class="feed">
+              <RecipeCard v-for="recipe in visibleRecipes" :key="recipe.id" :recipe="recipe" hide-edit hide-rating
+                :readonly="!authenticated" :collected="collected[recipe.id]" @open="openRecipe"
+                @toggle-collect="collect" @edit="editRecipe" />
+            </view>
+          </CategorySplit>
         </view>
       </view>
     </view>
+
     <!-- 管理分类弹窗（up-popup 底部弹层；不用 v-if，关闭时播放收起动画，custom-class 避免在 flex 布局中占位） -->
     <up-popup :show="categoryManagerOpen" custom-class="popup-static" mode="bottom" :safe-area-inset-bottom="true"
       @close="closeCategoryManager">
@@ -276,65 +285,146 @@ defineExpose({
 </template>
 
 <style scoped>
+/*
+ * 布局与滚动协同：
+ * 1. 外层 pages/index/index.vue 给所有 tab 提供 <scroll-view class="tab-scroll"> 作为外层滚动容器。
+ *    这里去掉 my-page 的固定高度（改 min-height），让组件总高 ≈ backdrop (40vh) + sheet (≥ 60vh)，
+ *    外层 scroll-view 才能接管整页滚动。
+ * 2. backdrop 跟着外层滚动；当用户从右栏列表手势上滑时，内层 scroll-view 在顶部会
+ *    把滚动事件冒泡到外层 → 整个 backdrop + sheet 一起上移 → sheet 逐渐盖住 backdrop。
+ *    当 backdrop 滚出可视区后，再继续滑动由右栏内层 scroll-view 接管列表内部滚动。
+ * 3. sheet height 给到至少 60vh，保证右栏能放下完整列表分类而不被截掉。
+ */
 .my-page {
+  /* 覆盖全局 .page-shell 的 padding：让 backdrop 紧贴状态栏下方，sheet 紧贴底部 */
+  padding: 0 !important;
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: calc(100vh - var(--window-top) - var(--window-bottom));
-  min-height: 0;
+  min-height: calc(100vh - var(--window-top) - var(--window-bottom));
+  box-sizing: border-box;
+  background: #fdf8f2;
+}
+
+/* 顶部背景图区：相对定位，固定高度，让 image 子元素 absolute 铺满。
+   主视觉策略：backdrop 高度 = 540rpx (iPhone 14 Pro 上 ~38% 视口)，
+   顶部 fade 蒙版给 header/filter 文字提供可读性，底部接 sheet */
+.recipe-backdrop {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 340rpx;
   overflow: hidden;
-  padding-top: 28rpx;
-  padding-bottom: 20rpx;
+}
+
+.recipe-backdrop-img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* AI 生成的图右下角有 AI 水印；用 background 占位色 + image aspectFill 蒙版覆盖。
+     image 的 mode="aspectFill" 默认主体居中，但底部 8% 高度的水印仍在。
+     这里再叠一层 fade 蒙版把它涂掉。 */
+  background: #f3e3cf;
+}
+
+.recipe-backdrop-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 100%;
+  background:
+    linear-gradient(180deg,
+      rgba(253, 248, 242, 0.94) 0%,
+      rgba(253, 248, 242, 0.55) 16%,
+      rgba(253, 248, 242, 0.18) 38%,
+      rgba(253, 248, 242, 0.12) 62%,
+      rgba(253, 248, 242, 0.55) 86%,
+      rgba(253, 248, 242, 0.96) 100%);
+  pointer-events: none;
+}
+
+.recipe-top {
+  padding: 0 12rpx 0;
+}
+
+.recipe-backdrop-handle {
+  position: absolute;
+  bottom: 28rpx;
+  left: 50%;
+  width: 80rpx;
+  height: 10rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 2rpx 6rpx rgba(86, 61, 43, 0.1);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* 列表 sheet：浮在背景图之下，覆盖 backdrop 下半部分；
+   min-height 设到视口高度，确保外层 scroll-view 滚到底时整张 backdrop 被完全推出
+   （外层 scrollTop = 总高 - 视口 ≈ backdrop 高度，刚好盖住背景图）。 */
+.recipe-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: calc(100% + 2rpx);
+  height: calc(100vh - var(--safe-top) - var(--capsule-h, 0px));
+  margin-top: -36rpx;
+  padding: 0 2rpx;
+  background: #fdf8f2;
+  border-radius: 36rpx 36rpx 0 0;
+  box-shadow: 0 -8rpx 24rpx rgba(86, 61, 43, .08);
   box-sizing: border-box;
 }
 
-.recipe-page-scroll {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.recipe-backdrop {
+.recipe-sheet-handle {
   flex: 0 0 auto;
-  padding-bottom: 16rpx;
-}
-
-.recipe-fixed-top {
-  flex: 0 0 auto;
-}
-
-.recipe-sheet {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
-  background: #fdf8f2;
+  height: 22rpx;
+  padding: 14rpx 0 8rpx;
+  box-sizing: border-box;
+}
+
+.recipe-sheet-handle::after {
+  content: '';
+  width: 100rpx;
+  height: 10rpx;
+  border-radius: 999rpx;
+  background: #e0cdb8;
 }
 
 .recipe-scroll-region {
   display: flex;
   flex: 1 1 auto;
   width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  padding: 0 18rpx;
+  box-sizing: border-box;
 }
 
 .recipe-category-host {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
+  margin-bottom: 18rpx;
   overflow: hidden;
+  box-sizing: border-box;
 }
+
 /* CategorySplit 在 .recipe-category-host（flex row）里处于主轴，子项不会被
    align-items:stretch 拉伸 → 宿主默认内容宽，组件内 .category-layout 的 width:100%
    锚定"内容宽的宿主"而收缩。class 打在宿主节点上，父作用域样式直接生效。 */
@@ -342,7 +432,6 @@ defineExpose({
   display: flex;
   flex: 1 1 auto;
   width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
 }
@@ -356,23 +445,53 @@ defineExpose({
 
 .header-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  padding: 12rpx 2rpx 0;
+
+}
+
+.recipe-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 14rpx 4rpx 0;
+}
+
+.recipe-heading {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 0;
+  padding: 0;
+}
+
+.recipe-heading-title {
+  overflow: hidden;
+  color: #33261e;
+  font-family: Georgia, 'Songti SC', serif;
+  font-size: 46rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  flex-shrink: 0;
+  gap: 8rpx;
 }
 
 .recipe-actions {
   display: flex;
   align-items: center;
-  gap: 8rpx;
-  padding-left: 10rpx;
+  gap: 6rpx;
+  padding-left: 8rpx;
   border-left: 1rpx solid #eee1d6;
 }
 
@@ -380,13 +499,13 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 92rpx;
-  height: 54rpx;
-  gap: 6rpx;
-  border-radius: 13rpx;
+  width: 80rpx;
+  height: 48rpx;
+  gap: 5rpx;
+  border-radius: 12rpx;
   box-sizing: border-box;
   color: #47745f;
-  font-size: 20rpx;
+  font-size: 19rpx;
   transition: background .15s ease, color .15s ease, transform .15s ease;
 }
 
@@ -413,12 +532,13 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 58rpx;
-  height: 58rpx;
+  width: 50rpx;
+  height: 50rpx;
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 15rpx;
+  border-radius: 13rpx;
+  line-height: 1;
   box-sizing: border-box;
 }
 
@@ -449,26 +569,32 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  margin-top: 14rpx;
-  padding: 16rpx 4rpx 0;
-  border-top: 1rpx solid #f3ece4;
+  margin-top: 12rpx;
+  padding: 12rpx 6rpx 6rpx;
+  border-top: 1rpx solid rgba(110, 80, 60, 0.10);
 }
 
 .filter-copy {
   display: flex;
   align-items: baseline;
-  gap: 12rpx;
+  gap: 10rpx;
 }
 
 .filter-title {
   color: #6f5f54;
-  font-size: 22rpx;
+  font-size: 21rpx;
   font-weight: 600;
 }
 
 .filter-desc {
   color: #a29388;
-  font-size: 18rpx;
+  font-size: 17rpx;
+}
+
+/* switch 默认尺寸偏大，整体缩小以免在窄行里占位过高 */
+.scope-switch {
+  transform: scale(0.82);
+  transform-origin: right center;
 }
 
 .recipe-stats {
@@ -514,7 +640,7 @@ defineExpose({
 }
 
 :deep(.category-layout) {
-  margin-top: 16rpx;
+  margin-top: 4rpx;
 }
 
 .feed {
@@ -681,12 +807,13 @@ defineExpose({
   }
 
   .header-row {
-    justify-content: flex-end;
+    justify-content: space-between;
   }
 
   .header-actions {
     justify-content: flex-end;
-    width: 100%;
+    flex-shrink: 0;
+    width: auto;
     box-sizing: border-box;
   }
 
@@ -696,18 +823,22 @@ defineExpose({
   }
 
   .icon-action {
-    width: 54rpx;
-    height: 54rpx;
-    border-radius: 14rpx;
+    width: 48rpx;
+    height: 48rpx;
+    border-radius: 12rpx;
   }
 
   .nav-action {
-    width: 88rpx;
-    height: 50rpx;
+    width: 78rpx;
+    height: 46rpx;
   }
 
   .recipe-actions {
-    padding-left: 7rpx;
+    padding-left: 6rpx;
+  }
+
+  .recipe-heading-title {
+    font-size: 40rpx;
   }
 }
 </style>
@@ -735,10 +866,16 @@ defineExpose({
   border-color: #f0e3d6;
   background: #fff;
   color: #6f5f54;
+  line-height: 1;
   box-shadow: 0 8rpx 18rpx rgba(232, 84, 46, .05);
 }
 
-.icon-action .app-icon {
+/* 纯图标按钮：图标作为 inline-flex 子项会被按 inline 基线对齐而偏下，
+   这里强制块级 flex 充满按钮并由 flex 居中，消除竖直偏移（仅作用于本页图标按钮） */
+.icon-action :deep(.app-icon) {
+  display: flex;
+  width: 100%;
+  height: 100%;
   color: currentColor;
 }
 

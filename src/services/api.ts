@@ -19,6 +19,40 @@ export interface AuthResponse {
   user: UserProfile
 }
 
+export interface AiResponseFormat {
+  type: 'json_object' | 'json_schema'
+  json_schema?: {
+    name: string
+    description?: string
+    strict?: boolean
+    schema: Record<string, unknown>
+  }
+}
+
+export interface AiResponseRequest {
+  input: string
+  model?: string
+  instructions?: string
+  enableThinking?: boolean
+  maxOutputTokens?: number
+  topP?: number
+  temperature?: number
+  stop?: string | string[]
+  thinkingBudget?: number
+  responseFormat?: AiResponseFormat
+}
+
+export interface AiResponse {
+  id: string
+  model: string
+  text: string
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+  }
+}
+
 export interface RemoteIngredientExtraUnit {
   unit: string
   unitKey: string
@@ -75,7 +109,7 @@ const request = <T>(options: UniApp.RequestOptions) => new Promise<T>((resolve, 
   uni.request({
     ...options,
     url: `${API_BASE_URL}${options.url}`,
-    timeout: 5000,
+    timeout: options.timeout || 5000,
     header,
     success: (response) => {
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -116,6 +150,7 @@ export const getMyRecipesRemote = (includeImported = true) => request<Recipe[]>(
 export const createShareLinkRemote = () => request<ShareLinkResponse>({ url: '/recipes/share-link', method: 'GET' })
 export const registerAccount = (account: string, password: string) => request<AuthResponse>({ url: '/auth/register', method: 'POST', data: { account, password } })
 export const loginAccount = (account: string, password: string) => request<AuthResponse>({ url: '/auth/login', method: 'POST', data: { account, password } })
+export const createAiResponseRemote = (input: AiResponseRequest) => request<AiResponse>({ url: '/ai/responses', method: 'POST', data: input, timeout: 65_000 })
 export const getMyRecipeCategoriesRemote = () => request<UserRecipeCategory[]>({ url: '/recipes/categories/mine', method: 'GET' })
 export const createRecipeCategoryRemote = (name: string) => request<UserRecipeCategory>({ url: '/recipes/categories', method: 'POST', data: { name } })
 export const updateRecipeCategoryRemote = (id: string, name: string) => request<UserRecipeCategory>({ url: `/recipes/categories/${id}`, method: 'PUT', data: { name } })

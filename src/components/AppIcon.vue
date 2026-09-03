@@ -5,7 +5,7 @@ const iconGlyphs = {
   plus: String.fromCharCode(0xea13),
   spark: String.fromCharCode(0xf36b),
   check: String.fromCharCode(0xeb7b),
-  share: String.fromCharCode(0xf0f9),
+  share: String.fromCharCode(0xf0fd),
   grid: String.fromCharCode(0xee90),
   community: String.fromCharCode(0xebba),
   settings: String.fromCharCode(0xf0e6),
@@ -32,23 +32,29 @@ const props = withDefaults(defineProps<{
 </script>
 
 <template>
-  <!-- 功能图标使用单色字体；多色食材图标应使用独立图片资源。 -->
-  <text
+  <!-- 功能图标使用单色字体；多色食材图标应使用独立图片资源。
+       注：必须用 <view> 而不是 <text> —— <text> 在 uniapp/小程序里是 inline 元素，
+            对 display: inline-flex + align-items: center 不生效，会导致图标
+            偏基线、视觉上向下偏移。 -->
+  <view
     class="app-icon"
     :class="props.size"
     :aria-label="props.label"
     :aria-hidden="props.label ? undefined : true"
-  >{{ iconGlyphs[props.name] }}</text>
+  >{{ iconGlyphs[props.name] }}</view>
 </template>
 
 <style scoped>
-/* ---------- 图标字体：Remix Icon（Apache-2.0），仅保留项目使用的 17 个字形 ---------- */
+/* ---------- 图标字体：Remix Icon（Apache-2.0）子集，保留项目使用的 17 个字形；share = share-forward-line（0xf0fd），原为 share-forward-2-line（0xf0f9） ---------- */
 @font-face {
   font-family: 'remixicon';
-  src: url("data:application/x-font-woff;charset=utf-8;base64,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") format('woff');
+  src: url("data:application/x-font-woff;charset=utf-8;base64,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") format('woff');
   font-display: block;
 }
 .app-icon {
+  /* 整体居中靠两层 flex：父容器 flex 居中 .app-icon 盒子，
+     盒子内部又 inline-flex 把字形居中。view 而不是 text 是关键：
+     <text> 在 uniapp/小程序里是 inline 元素，对 align-items: center 不生效。 */
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -62,7 +68,6 @@ const props = withDefaults(defineProps<{
   font-weight: normal;
   line-height: 1;
   text-align: center;
-  vertical-align: middle;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

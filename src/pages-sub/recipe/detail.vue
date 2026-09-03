@@ -5,7 +5,6 @@ import PlanPicker from '@/components/PlanPicker.vue'
 import { addRecipeToMenu, formatDate } from '@/services/menu'
 import { deleteRecipeRemote, fetchMyRecipeCategories, fetchRecipeDetails, fetchSharedRecipe, importCommunityRecipe } from '@/services/recipe'
 import { formatIngredientAmount } from '@/services/ingredient-matching'
-import { hasUsableIngredient, loadInventoryBatches } from '@/services/inventory'
 import { withLoginRequired } from '@/services/auth-guard'
 import { getCurrentUser } from '@/services/storage'
 import type { MealType, Recipe } from '@/types'
@@ -82,13 +81,7 @@ const addMenu = withLoginRequired(async (planDate: string, meals: MealType[]) =>
   try {
     await Promise.all(meals.map((meal) => addRecipeToMenu(planDate, recipe.value!.id, meal)))
     showPlanPicker.value = false
-    await loadInventoryBatches()
-    const missing = recipe.value.ingredients.filter((ingredient) => !hasUsableIngredient(ingredient)).map((ingredient) => ingredient.name)
-    if (missing.length) {
-      uni.showModal({ title: '食材提醒', content: `食材库暂未记录：${missing.join('、')}。加入菜篮子时仍可逐项选择。`, showCancel: false, confirmText: '知道了' })
-    } else {
-      uni.showToast({ title: `已安排 ${meals.length} 餐`, icon: 'none' })
-    }
+    uni.showToast({ title: `已安排 ${meals.length} 餐`, icon: 'none' })
   } catch { uni.showToast({ title: '加入计划失败，请检查服务连接', icon: 'none' }) }
 })
 const openPlanPicker = withLoginRequired(() => { showPlanPicker.value = true })
@@ -157,6 +150,9 @@ const startCooking = withLoginRequired(() => {
 .preview-images { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; }
 .preview-images image { width: 190rpx; height: 150rpx; border-radius: 12rpx; background: #f7ede3; }
 .bottom-actions { position: fixed; right: 0; bottom: 0; left: 0; display: flex; gap: 18rpx; padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom)); background: rgba(247,248,243,.95); }
-.bottom-actions button { flex: 1; }
-.plan-button { height: 80rpx; line-height: 80rpx; border-radius: 16rpx; background: #f1dfbd; color: #76572d; font-size: 24rpx; font-weight: 600; }
+/* 两个按钮尺寸完全统一（同高 / 同胶囊圆角 / 同字号 / 同为 flex 居中），
+   仅用「渐变填充 vs 描边」区分主次。
+   居中统一走 flex：plan-button 有 1.5rpx 描边，靠 line-height 居中会偏低约 1.5rpx。 */
+.bottom-actions button { display: flex; flex: 1; align-items: center; justify-content: center; height: 88rpx; line-height: 1; border-radius: 999rpx; font-size: 28rpx; font-weight: 600; }
+.plan-button { border: 1.5rpx solid #e4d3c2; background: #fff; color: #c93d20; }
 </style>

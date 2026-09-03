@@ -84,7 +84,7 @@ const pick = (item: IngredientCatalogItem) => { emit('select', { name: item.name
 </template>
 
 <style scoped>
-.picker { display: flex; flex-direction: column; max-height: 76vh; overflow: hidden; padding: 28rpx 26rpx 16rpx; box-sizing: border-box; border-radius: 48rpx 48rpx 0 0; background: #fdf8f2; }
+.picker { display: flex; flex-direction: column; width: 100%; height: 76vh; min-height: 0; max-height: 76vh; overflow: hidden; padding: 28rpx 26rpx 16rpx; box-sizing: border-box; border-radius: 48rpx 48rpx 0 0; background: #fdf8f2; }
 .picker-head { display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
 .picker-kicker { display: block; color: #b8862f; font-size: 16rpx; letter-spacing: 3rpx; font-weight: 700; }
 .picker-title { display: block; margin-top: 6rpx; color: #33261e; font-family: Georgia, 'Songti SC', serif; font-size: 34rpx; font-weight: 700; }
@@ -96,7 +96,7 @@ const pick = (item: IngredientCatalogItem) => { emit('select', { name: item.name
 .picker-tabs { flex-shrink: 0; margin-top: 18rpx; white-space: nowrap; overflow-x: auto; }
 .picker-tab { display: inline-flex; align-items: center; margin-right: 12rpx; padding: 9rpx 20rpx; border: 1rpx solid #f0e3d6; border-radius: 999rpx; background: #fff; color: #8a7a70; font-size: 22rpx; }
 .picker-tab.active { border-color: #e8542e; background: #fdeee7; color: #c93d20; font-weight: 600; }
-.picker-list { flex: 1; min-height: 0; overflow-y: auto; margin-top: 16rpx; }
+.picker-list { flex: 1 1 0; height: 0; min-height: 0; overflow-y: auto; margin-top: 16rpx; }
 .picker-item { display: flex; align-items: baseline; justify-content: space-between; padding: 22rpx 6rpx; border-bottom: 1rpx solid #f7efe6; }
 .picker-item:active { opacity: .7; }
 .picker-item-name { color: #33261e; font-size: 27rpx; font-weight: 600; }
