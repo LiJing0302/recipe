@@ -2,11 +2,11 @@
   "pages": [
     {
       "path": "pages/index/index",
-      "style": { "navigationStyle": "custom", "navigationBarTitleText": "今日菜单" }
+      "style": { "navigationStyle": "custom" }
     },
     {
       "path": "pages/community/index",
-      "style": { "navigationBarTitleText": "广场" }
+      "style": { "navigationStyle": "custom" }
     },
     {
       "path": "pages/tabbar-placeholder/index",
@@ -19,36 +19,36 @@
       "pages": [
         {
           "path": "ingredients/storage",
-          "style": { "navigationBarTitleText": "食材区域" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "ingredients/categories",
-          "style": { "navigationBarTitleText": "食材分类" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "shared-recipes/index",
-          "style": { "navigationBarTitleText": "分享食谱" }
+          "style": { "navigationStyle": "custom" }
         },
         { "path": "index/index", "style": { "navigationStyle": "custom" } },
         {
           "path": "recipe/detail",
-          "style": { "navigationBarTitleText": "食谱详情" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "recipe/edit",
-          "style": { "navigationBarTitleText": "新建食谱" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "scan/index",
-          "style": { "navigationBarTitleText": "识别我的食材" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "cook/index",
-          "style": { "navigationBarTitleText": "烹饪模式" }
+          "style": { "navigationStyle": "custom" }
         },
         {
           "path": "database/schema",
-          "style": { "navigationBarTitleText": "数据库结构" }
+          "style": { "navigationStyle": "custom" }
         }
       ]
     }
@@ -58,7 +58,10 @@
     "navigationBarTitleText": "食光 AI",
     "navigationBarBackgroundColor": "#FDF8F2",
     "backgroundColor": "#FDF8F2",
-    "backgroundTextStyle": "light"
+    "backgroundTextStyle": "light",
+    "app-plus": {
+      "bounce": "none"
+    }
   },
   "easycom": {
     "autoscan": true,

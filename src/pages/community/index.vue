@@ -2,15 +2,16 @@
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AppIcon from '@/components/AppIcon.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { INGREDIENT_CATALOG } from '@/constants/ingredients'
 import { DEFAULT_FAMILY_CATEGORY, FAMILY_CATEGORIES } from '@/constants/recipe'
 import { fetchCommunityRecipes, fetchMyRecipeCategories, fetchMyRecipes, fetchRecipeDetails, importCommunityRecipe } from '@/services/recipe'
 import { formatIngredientAmount, getIngredientKey, loadIngredientMappingsRemote, previewIngredientMappings, type IngredientMappingPayload, type IngredientMappingPreview, type IngredientMatch } from '@/services/ingredient-matching'
 import { getConfiguredIngredientOptions, loadIngredientConfigsRemote, type ConfiguredIngredientOption } from '@/services/ingredient-config'
-import { getInventoryBatches, loadInventoryBatches } from '@/services/inventory'
 import { isFollowing, loadFollowing, toggleFollowing } from '@/services/social'
 import { getCurrentUser } from '@/services/storage'
 import { switchAppTab } from '@/services/tabbar'
+import { useInventoryStore } from '@/stores/inventory'
 import type { Recipe } from '@/types'
 
 type FeedTab = 'following' | 'discover'
@@ -39,6 +40,7 @@ const mappingRows = ref<IngredientMappingPreview[]>([])
 const mappingChoiceTarget = ref<IngredientMappingPreview>()
 const importing = ref(false)
 const currentUser = getCurrentUser()
+const inventoryStore = useInventoryStore()
 const feedTabs: Array<{ value: FeedTab; label: string }> = [
   { value: 'following', label: '关注' },
   { value: 'discover', label: '发现' }
@@ -97,7 +99,7 @@ const getMyIngredientOptions = (): ConfiguredIngredientOption[] => {
   // 食材分类页展示的是完整系统目录，未单独保存单位配置的目录食材也应可被指定。
   INGREDIENT_CATALOG.forEach((item) => options.set(getIngredientKey(item.name), { ingredientKey: getIngredientKey(item.name), name: item.name, category: item.category }))
   getConfiguredIngredientOptions().forEach((item) => options.set(item.ingredientKey, item))
-  getInventoryBatches().forEach((batch) => {
+  inventoryStore.batches.forEach((batch) => {
     const ingredientKey = batch.ingredientKey || getIngredientKey(batch.name)
     if (!options.has(ingredientKey)) options.set(ingredientKey, { ingredientKey, name: batch.name, category: batch.category || '其他' })
   })
@@ -105,7 +107,7 @@ const getMyIngredientOptions = (): ConfiguredIngredientOption[] => {
 }
 
 const load = async () => {
-  await Promise.all([loadFollowing().catch(() => []), loadInventoryBatches().catch(() => [])])
+  await Promise.all([loadFollowing().catch(() => []), inventoryStore.load().catch(() => [])])
   let recipes: Recipe[] = []
   try {
     recipes = await fetchCommunityRecipes()
@@ -279,8 +281,10 @@ watch(visibleRecipes, (recipes) => { waterfallRecipes.value = [...recipes] }, { 
 </script>
 
 <template>
-  <view class="page-shell community-page">
-    <view class="community-header"><view><text class="community-eyebrow">COMMUNITY</text><text class="community-heading">广场</text></view><text class="my-recipes-entry" @click="switchAppTab(3)">我的食谱</text></view>
+  <view class="community-screen">
+    <PageHeader title="广场" />
+    <view class="page-shell community-page">
+    <view class="community-header"><text class="my-recipes-entry" @click="switchAppTab(3)">我的食谱</text></view>
     <view class="feed-tabs"><text v-for="tab in feedTabs" :key="tab.value" class="feed-tab" :class="{ active: activeFeedTab === tab.value }" @click="activeFeedTab = tab.value">{{ tab.label }}</text></view>
     <view class="filter-row"><view class="filter-chip" :class="{ active: activeFilter === 'category' || activeCategory !== '全部' }" @click="openFilter('category')"><text class="filter-name">分类</text><text class="filter-value">{{ activeCategory }}</text><text class="filter-arrow">⌄</text></view><view class="filter-chip" :class="{ active: activeFilter === 'sort' || sortMode !== 'comprehensive' }" @click="openFilter('sort')"><text class="filter-name">排序</text><text class="filter-value">{{ sortLabel }}</text><text class="filter-arrow">⌄</text></view></view>
     <view class="result-row"><text class="result-count">{{ visibleRecipes.length }} 道公开菜谱</text></view>
@@ -354,12 +358,14 @@ watch(visibleRecipes, (recipes) => { waterfallRecipes.value = [...recipes] }, { 
       </view>
     </up-popup>
 
+    </view>
   </view>
 </template>
 
 <style scoped>
-.community-page { padding-top: 28rpx; padding-bottom: 120rpx; }
-.community-header { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 2rpx 26rpx; }
+.community-screen { min-height: 100vh; background: #fdf8f2; }
+.community-page { min-height: 0; padding-top: 20rpx; padding-bottom: 120rpx; }
+.community-header { display: flex; align-items: flex-end; justify-content: flex-end; margin: 0 2rpx 26rpx; }
 .community-eyebrow { display: block; color: #b8862f; font-size: 15rpx; letter-spacing: 1rpx; }
 .community-heading { display: block; margin-top: 10rpx; color: #33261e; font-family: Georgia, 'Songti SC', serif; font-size: 50rpx; font-weight: 700; }
 .my-recipes-entry { padding: 13rpx 18rpx; border: 1rpx solid #f0e3d6; border-radius: 12rpx; color: #c93d20; font-size: 22rpx; }

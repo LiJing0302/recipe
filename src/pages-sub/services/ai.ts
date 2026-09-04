@@ -149,7 +149,7 @@ export const suggestRecipeSubtitle = async (input: { title: string; flavor: stri
     `制作工艺：${input.process || '未设置'}`,
     `难度：${input.difficulty || '未设置'}`
   ].join('\n')
-  const payload = parseAiJson(await runAiPrompt(prompt, {model:'qwen3.7-flash', enableThinking: false, responseFormat: subtitleResponseFormat }))
+  const payload = parseAiJson(await runAiPrompt(prompt, { enableThinking: false, responseFormat: subtitleResponseFormat }))
   const subtitle = textValue(payload.subtitle).replace(/^['"“”]+|['"“”]+$/g, '').slice(0, 80)
   if (!subtitle) throw new Error('AI 未返回有效的一句话描述')
   return subtitle

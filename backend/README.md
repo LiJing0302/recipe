@@ -21,7 +21,7 @@ create that database separately.
 
 Configure `DASHSCOPE_API_KEY` before using the AI endpoint. The backend keeps
 the key server-side and uses DashScope's OpenAI-compatible Chat Completions API.
-`DASHSCOPE_MODEL` defaults to `qwen3.7-flash`; set `DASHSCOPE_ENABLE_THINKING`
+`DASHSCOPE_MODEL` defaults to `qwen3.8-flash`; set `DASHSCOPE_ENABLE_THINKING`
 to `false` to disable thinking mode.
 
 For production, configure the values from `.env.production.example` in the
@@ -60,7 +60,7 @@ The AI endpoint requires `Authorization: Bearer <token>` and accepts:
 ```json
 {
   "input": "前端场景拼装后的 prompt",
-  "model": "qwen3.7-flash",
+  "model": "qwen3.8-flash",
   "instructions": "可选的系统级补充指令",
   "enableThinking": true,
   "maxOutputTokens": 4096,

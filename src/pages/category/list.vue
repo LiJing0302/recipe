@@ -2,6 +2,7 @@
 import { onLoad, onReachBottom } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import RecipeCard from '@/components/RecipeCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getPublicRecipesRemote } from '@/services/api'
 import { isCollected, loadCollections, toggleCollection } from '@/services/recipe'
 import type { Recipe } from '@/types'
@@ -60,8 +61,10 @@ onReachBottom(() => load())
 </script>
 
 <template>
-  <view class="page-shell recipe-list-page">
-    <view class="list-header"><view><text class="eyebrow">CATEGORY</text><text class="page-title">{{ tag || '全部菜谱' }}</text></view><text class="total-count">{{ total }} 道菜</text></view>
+  <view class="recipe-list-screen">
+    <PageHeader :title="tag || '全部菜谱'" />
+    <view class="page-shell recipe-list-page">
+    <view class="list-header"><text class="total-count">{{ total }} 道菜</text></view>
     <view v-if="error && !recipes.length" class="empty-state"><text>{{ error }}</text><text class="retry" @click="load(true)">重新加载</text></view>
     <view v-else-if="!loading && !recipes.length" class="empty-state">这个分类暂时没有菜谱</view>
     <view v-else class="feed">
@@ -70,12 +73,14 @@ onReachBottom(() => load())
       <view v-else-if="hasMore" class="list-status">上拉加载更多</view>
       <view v-else class="list-status">已经到底了</view>
     </view>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.recipe-list-page { padding-top: 42rpx; padding-bottom: 50rpx; }
-.list-header { display: flex; align-items: flex-end; justify-content: space-between; padding: 14rpx 0 28rpx; }
+.recipe-list-screen { min-height: 100vh; background: #fdf8f2; }
+.recipe-list-page { min-height: 0; padding-top: 16rpx; padding-bottom: 50rpx; }
+.list-header { display: flex; align-items: flex-end; justify-content: flex-end; padding: 0 0 28rpx; }
 .eyebrow { color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
 .page-title { display: block; max-width: 520rpx; margin-top: 16rpx; color: #33261e; font-size: 48rpx; font-weight: 700; }
 .total-count { flex-shrink: 0; margin-bottom: 8rpx; color: #a29388; font-size: 22rpx; }

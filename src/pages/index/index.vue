@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onLoad, onShareAppMessage, onShow } from '@dcloudio/uni-app'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppTabBar from '@/custom-tab-bar/index.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import MenuTab from '@/pages/menu/index.vue'
@@ -9,10 +9,13 @@ import IngredientsTab from '@/pages/ingredients/index.vue'
 import RecipesTab from '@/pages/my-recipes/index.vue'
 import ProfileTab from '@/pages/profile/index.vue'
 import { showFloatingTabBar } from '@/services/tabbar'
+import { useAppStore } from '@/stores/app'
 import { useTabBarStore } from '@/stores/tabbar'
 
 const TAB_TITLES = ['今日菜单', '菜篮子', '食材库', '我的食谱', '我的']
 const store = useTabBarStore()
+const appStore = useAppStore()
+const sessionKey = computed(() => appStore.sessionKey)
 const statusBarHeight = ref(0)
 const capsuleHeight = ref(0)
 const setSafeTop = () => {
@@ -30,12 +33,15 @@ type TabView = { refresh?: () => void | Promise<void> }
 const menuTab = ref<TabView>()
 const basketTab = ref<TabView & { openManualForm?: () => void }>()
 const ingredientsTab = ref<TabView>()
-const recipesTab = ref<TabView & { getSharePayload?: () => { title: string; path: string } }>()
+const recipesTab = ref<TabView & { getSharePayload?: () => { title: string; path: string }; openRecipeForm?: () => void }>()
 const profileTab = ref<TabView>()
 const hasShown = ref(false)
 
 const openBasketManualForm = () => {
   basketTab.value?.openManualForm?.()
+}
+const openRecipeForm = () => {
+  recipesTab.value?.openRecipeForm?.()
 }
 
 const setActiveTab = (index: number) => {
@@ -67,7 +73,7 @@ onLoad((options) => {
 onShow(() => {
   showFloatingTabBar()
   setActiveTab(store.selected)
-  if (hasShown.value) {
+  if (hasShown.value && store.selected !== 3) {
     const activeView = [menuTab.value, basketTab.value, ingredientsTab.value, recipesTab.value, profileTab.value][store.selected]
     void activeView?.refresh?.()
   }
@@ -83,22 +89,24 @@ onShareAppMessage(() => recipesTab.value?.getSharePayload?.() || {
 <template>
   <view class="app-container" :style="{ '--safe-top': statusBarHeight + 'px', '--capsule-h': capsuleHeight + 'px' }">
     <scroll-view v-show="store.selected === 0" class="tab-panel tab-scroll" scroll-y :scroll-with-animation="false">
-      <MenuTab v-if="visited[0]" ref="menuTab" class="tab-child" :active="store.selected === 0" />
+      <MenuTab v-if="visited[0]" :key="`menu-${sessionKey}`" ref="menuTab" class="tab-child" :active="store.selected === 0" />
     </scroll-view>
     <scroll-view v-show="store.selected === 1" class="tab-panel tab-scroll" scroll-y :scroll-with-animation="false">
-      <BasketTab v-if="visited[1]" ref="basketTab" class="tab-child" :active="store.selected === 1" />
+      <BasketTab v-if="visited[1]" :key="`basket-${sessionKey}`" ref="basketTab" class="tab-child" :active="store.selected === 1" />
     </scroll-view>
     <scroll-view v-show="store.selected === 2" class="tab-panel tab-scroll" scroll-y :scroll-with-animation="false">
-      <IngredientsTab v-if="visited[2]" ref="ingredientsTab" class="tab-child" :active="store.selected === 2" />
+      <IngredientsTab v-if="visited[2]" :key="`ingredients-${sessionKey}`" ref="ingredientsTab" class="tab-child" :active="store.selected === 2" />
     </scroll-view>
     <scroll-view v-show="store.selected === 3" class="tab-panel tab-scroll" scroll-y :scroll-with-animation="false">
-      <RecipesTab v-if="visited[3]" ref="recipesTab" class="tab-child" :active="store.selected === 3" />
+      <RecipesTab v-if="visited[3]" :key="`recipes-${sessionKey}`" ref="recipesTab" class="tab-child" />
     </scroll-view>
     <scroll-view v-show="store.selected === 4" class="tab-panel tab-scroll" scroll-y :scroll-with-animation="false">
-      <ProfileTab v-if="visited[4]" ref="profileTab" class="tab-child" :active="store.selected === 4" />
+      <ProfileTab v-if="visited[4]" :key="`profile-${sessionKey}`" ref="profileTab" class="tab-child" :active="store.selected === 4" />
     </scroll-view>
     <AppTabBar />
-    <button v-show="store.selected === 1" class="basket-fab" aria-label="添加今日购入" @click="openBasketManualForm">
+    <button v-show="store.selected === 1 || (store.selected === 3 && appStore.authenticated)" class="basket-fab"
+      :aria-label="store.selected === 1 ? '添加今日购入' : '新建食谱'"
+      @click="store.selected === 1 ? openBasketManualForm() : openRecipeForm()">
       <AppIcon name="plus" size="lg" />
     </button>
   </view>

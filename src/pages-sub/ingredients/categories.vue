@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import CategorySplit from '@/components/CategorySplit.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getIngredientsByCategory } from '@/constants/ingredients'
 import type { IngredientCategory, IngredientCatalogItem } from '@/constants/ingredients'
 import { SYSTEM_CATEGORIES, addIngredientCategory, getAllIngredientCategories, getCatalogCountByCategory, loadIngredientCategories, removeIngredientCategory, renameIngredientCategory } from '@/services/ingredient-category'
@@ -209,9 +210,10 @@ const fridgeWarning = computed(() => {
 </script>
 
 <template>
-  <view class="category-page">
+  <view class="category-screen">
+    <PageHeader title="食材分类" />
+    <view class="category-page">
     <view class="category-head">
-      <view><text class="eyebrow">INGREDIENT CATEGORIES</text><text class="page-title">食材分类</text></view>
       <button class="add-category-button" aria-label="新增分类" @click="openAdd"><AppIcon name="plus" size="sm" /><text>新增</text></button>
     </view>
 
@@ -327,12 +329,14 @@ const fridgeWarning = computed(() => {
       @cancel="closeBaseUnitPicker"
       @confirm="selectBaseUnit"
     />
+    </view>
   </view>
 </template>
 
 <style scoped>
-.category-page { display: flex; flex-direction: column; height: calc(100vh - var(--window-top) - var(--window-bottom)); padding: 28rpx 30rpx 20rpx; box-sizing: border-box; background: #fdf8f2; color: #33261e; }
-.category-head { display: flex; align-items: flex-end; justify-content: space-between; flex-shrink: 0; padding: 6rpx 2rpx 22rpx; }
+.category-screen { display: flex; flex-direction: column; height: calc(100vh - var(--window-top) - var(--window-bottom)); background: #fdf8f2; }
+.category-page { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 10rpx 30rpx 20rpx; box-sizing: border-box; color: #33261e; }
+.category-head { display: flex; align-items: flex-end; justify-content: flex-end; flex-shrink: 0; padding: 6rpx 2rpx 22rpx; }
 .eyebrow { display: block; color: #b8862f; font-size: 17rpx; letter-spacing: 3rpx; font-weight: 700; }
 .page-title { display: block; margin-top: 12rpx; color: #33261e; font-family: Georgia, 'Songti SC', serif; font-size: 50rpx; font-weight: 700; }
 .add-category-button { display: flex; align-items: center; justify-content: center; gap: 8rpx; flex-shrink: 0; margin: 0 0 4rpx; padding: 0 26rpx; height: 60rpx; border: 0; border-radius: 999rpx; background: linear-gradient(135deg, #ff8a3d 0%, #e8542e 100%); color: #fff; font-size: 24rpx; font-weight: 600; line-height: 60rpx; box-shadow: 0 10rpx 22rpx rgba(232, 84, 46, .26); }

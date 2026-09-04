@@ -13,13 +13,14 @@ export interface InventoryBatchDraft {
   storageMode: 'room' | 'chilled' | 'frozen'
 }
 
-const props = defineProps<{ open: boolean; batch?: IngredientInventoryBatch; title?: string }>()
+const props = defineProps<{ open: boolean; batch?: IngredientInventoryBatch; title?: string; categoryFilter?: IngredientCategory }>()
 const emit = defineEmits<{ close: []; save: [draft: InventoryBatchDraft] }>()
 /** 食材库只记录名称和批次；不要求用户维护数量、单位或价格。 */
 const form = reactive<InventoryBatchDraft>({ name: '', category: '其他', purchasedAt: '', storageMode: 'chilled' })
 const storageModes = ['room', 'chilled', 'frozen'] as const
 const storageLabels = ['常温', '冷藏', '冷冻']
 const formTitle = computed(() => props.title || (props.batch ? '编辑食材批次' : '添加今日购入'))
+const namePlaceholder = computed(() => props.categoryFilter === '调味品' ? '例如：食用油' : '例如：芹菜')
 const purchaseDatePickerOpen = ref(false)
 const storagePickerOpen = ref(false)
 
@@ -28,7 +29,10 @@ const suggestions = ref<ReturnType<typeof searchIngredients>>([])
 const updateSuggestions = () => {
   const key = form.name.trim()
   if (!key) { suggestions.value = []; return }
-  suggestions.value = searchIngredients(key, 8)
+  // 先过滤分类再截取数量，避免前 8 个结果被其他分类占满。
+  suggestions.value = searchIngredients(key, 1000)
+    .filter((item) => !props.categoryFilter || item.category === props.categoryFilter)
+    .slice(0, 8)
 }
 const pickSuggestion = (item: { name: string; category: IngredientCategory; unit: string }) => {
   form.name = item.name
@@ -41,7 +45,7 @@ const suggestionUnit = (item: { name: string; unit: string }) => item.unit
 const reset = () => {
   const catalog = props.batch?.name ? findIngredient(props.batch.name) : undefined
   form.name = props.batch?.name || ''
-  form.category = catalog?.category || props.batch?.category || (form.name ? getIngredientCategory(form.name) : '其他')
+  form.category = catalog?.category || props.batch?.category || props.categoryFilter || (form.name ? getIngredientCategory(form.name) : '其他')
   form.purchasedAt = props.batch?.purchasedAt?.slice(0, 10) || new Date().toISOString().slice(0, 10)
   form.storageMode = props.batch?.storageMode || 'chilled'
   suggestions.value = []
@@ -68,6 +72,9 @@ const updateName = () => {
 const submit = () => {
   if (!form.name.trim()) return uni.showToast({ title: '请输入食材名称', icon: 'none' })
   const detectedCategory = getIngredientCategory(form.name)
+  if (props.categoryFilter && detectedCategory !== props.categoryFilter) {
+    return uni.showToast({ title: `调料台只能添加${props.categoryFilter}食材`, icon: 'none' })
+  }
   emit('save', { ...form, category: detectedCategory === '其他' ? form.category : detectedCategory })
 }
 </script>
@@ -77,7 +84,7 @@ const submit = () => {
   <up-popup :show="open" mode="bottom" :safe-area-inset-bottom="true" @close="emit('close')">
     <view class="form-sheet">
       <view class="form-header"><view><text class="form-kicker">INGREDIENT BATCH</text><text class="form-title">{{ formTitle }}</text></view><view class="form-close" @click="emit('close')"><AppIcon name="close" size="md" /></view></view>
-      <view class="form-field"><text class="field-label">食材名称</text><input v-model="form.name" class="field-input" placeholder="例如：芹菜" @input="updateName" @focus="updateSuggestions" @blur="blurSuggestions" />
+      <view class="form-field"><text class="field-label">食材名称</text><input v-model="form.name" class="field-input" :placeholder="namePlaceholder" @input="updateName" @focus="updateSuggestions" @blur="blurSuggestions" />
         <view v-if="suggestions.length" class="suggest-list"><view v-for="item in suggestions" :key="item.name" class="suggest-item" @click="pickSuggestion(item)"><text class="suggest-name">{{ item.name }}</text><text class="suggest-meta">{{ item.category }} · {{ suggestionUnit(item) }}</text></view></view></view>
       <view class="batch-note">只记录家里是否有这项食材；数量、单位和价格不需要维护。</view>
       <view class="form-field"><text class="field-label">购入日期</text><view class="picker-input" @click="openPurchaseDatePicker"><text>{{ form.purchasedAt }}</text><AppIcon name="chevron-right" size="sm" /></view></view>

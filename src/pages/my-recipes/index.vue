@@ -1,22 +1,24 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import CategorySplit from '@/components/CategorySplit.vue'
 import RecipeCard from '@/components/RecipeCard.vue'
 import { DEFAULT_FAMILY_CATEGORY, FAMILY_CATEGORIES } from '@/constants/recipe'
 import { API_BASE_URL } from '@/config'
-import { createRecipeCategory, createShareLink, deleteRecipeCategory, fetchCommunityRecipes, fetchMyRecipeCategories, fetchMyRecipes, fetchPublicRecipeCategories, isCollected, loadCollections, toggleCollection, updateRecipeCategory } from '@/services/recipe'
-import { clearAuthSession, getCurrentUser, isAuthenticated } from '@/services/storage'
+import { createRecipeCategory, createShareLink, deleteRecipeCategory, fetchMyRecipeCategories, isCollected, loadCollections, toggleCollection, updateRecipeCategory } from '@/services/recipe'
+import { getCurrentUser } from '@/services/storage'
+import { useAppStore } from '@/stores/app'
+import { useRecipeStore } from '@/stores/recipe'
 import type { Recipe, RecipeCategory, UserRecipeCategory } from '@/types'
 
-const props = defineProps<{ active: boolean }>()
-
-const recipes = ref<Recipe[]>([])
+const recipeStore = useRecipeStore()
+const recipes = computed(() => recipeStore.recipes)
 const userCategories = ref<UserRecipeCategory[]>([])
 const defaultCategories = ref<RecipeCategory[]>(FAMILY_CATEGORIES.map((name) => ({ name, count: 0 })))
 const activeCategory = ref('')
 const loading = ref(false)
-const authenticated = ref(false)
+const appStore = useAppStore()
+const authenticated = computed(() => appStore.authenticated)
 const includeImported = ref(false)
 const categoryManagerOpen = ref(false)
 const categoryFormOpen = ref(false)
@@ -24,7 +26,6 @@ const editingCategory = ref<UserRecipeCategory>()
 const categoryDraft = ref('')
 const categorySaving = ref(false)
 const shareId = ref('')
-const loaded = ref(false)
 const recipeBackdropSrc = `${API_BASE_URL}/uploads/object?key=${encodeURIComponent('recipes/assets/recipes-backdrop.png')}`
 
 const categoryNames = computed(() => new Set((authenticated.value ? userCategories.value : defaultCategories.value).map((category) => category.name)))
@@ -45,44 +46,30 @@ const categoryItems = computed(() => {
 })
 const visibleRecipes = computed(() => recipes.value.filter((recipe) => categoriesFor(recipe).includes(activeCategory.value)))
 const collected = computed(() => Object.fromEntries(recipes.value.map((recipe) => [recipe.id, isCollected(recipe.id)])))
-const recipeTitle = computed(() => (authenticated.value ? `${getCurrentUser().name} 的食谱` : '精选食谱'))
-const loadPublicContent = async () => {
-  const [nextRecipes, nextCategories] = await Promise.all([fetchCommunityRecipes(), fetchPublicRecipeCategories()])
-  recipes.value = nextRecipes
-  userCategories.value = []
-  defaultCategories.value = nextCategories.length ? nextCategories : FAMILY_CATEGORIES.map((name) => ({ name, count: 0 }))
-}
+const recipeTitle = computed(() => (authenticated.value ? `${appStore.user?.name || getCurrentUser().name} 的食谱` : '我的食谱'))
 const load = async () => {
-  authenticated.value = isAuthenticated()
   loading.value = true
-  if (!authenticated.value) {
-    try {
-      await loadPublicContent()
-    } catch {
-      recipes.value = []
-      userCategories.value = []
-      uni.showToast({ title: '默认食谱加载失败，请检查服务器连接', icon: 'none' })
-    } finally {
-      if (!categoryItems.value.some((category) => category.name === activeCategory.value)) activeCategory.value = categoryItems.value[0]?.name || ''
-      loading.value = false
-      loaded.value = true
-    }
+  if (!appStore.authenticated) {
+    // 未登录时不加载公开食谱，避免将社区内容混入“我的食谱” Tab。
+    recipeStore.clear()
+    userCategories.value = []
+    defaultCategories.value = FAMILY_CATEGORIES.map((name) => ({ name, count: 0 }))
+    activeCategory.value = defaultCategories.value[0]?.name || ''
+    shareId.value = ''
+    loading.value = false
     return
   }
   try {
     await loadCollections()
     const shareLinkPromise = shareId.value ? Promise.resolve({ shareId: shareId.value }) : createShareLink()
-    const [nextRecipes, nextCategories, nextShareLink] = await Promise.all([fetchMyRecipes(includeImported.value), fetchMyRecipeCategories(), shareLinkPromise])
-    recipes.value = nextRecipes
+    const [, nextCategories, nextShareLink] = await Promise.all([recipeStore.refresh(includeImported.value), fetchMyRecipeCategories(), shareLinkPromise])
     userCategories.value = nextCategories.filter((category) => category.id !== 'uncategorized' && category.name !== DEFAULT_FAMILY_CATEGORY)
     shareId.value = nextShareLink.shareId
   } catch (error) {
-    recipes.value = []
     userCategories.value = []
     const message = error instanceof Error ? error.message : ''
     if (message.includes('登录') || message.includes('Unauthorized') || message.includes('401')) {
-      clearAuthSession()
-      authenticated.value = false
+      appStore.expire()
       uni.showToast({ title: '登录已失效，请重新登录', icon: 'none' })
     } else {
       uni.showToast({ title: '食谱加载失败，请检查服务器连接', icon: 'none' })
@@ -90,11 +77,11 @@ const load = async () => {
   } finally {
     if (!categoryItems.value.some((category) => category.name === activeCategory.value)) activeCategory.value = categoryItems.value[0]?.name || ''
     loading.value = false
-    loaded.value = true
   }
 }
 
 const openCommunity = () => uni.navigateTo({ url: '/pages/community/index' })
+const openRecipeForm = () => uni.navigateTo({ url: '/pages-sub/recipe/edit' })
 const selectCategory = (name: string) => { activeCategory.value = name }
 const toggleImported = (event: { detail: { value: boolean } }) => { includeImported.value = event.detail.value; void load() }
 const openRecipe = (id: string) => uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${encodeURIComponent(id)}` })
@@ -165,11 +152,13 @@ const removeCategory = (category: UserRecipeCategory) => {
     }
   })
 }
-watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
+// 食谱页只在首次挂载时加载；后续由 Store 的登录、退出、创建和编辑流程驱动更新。
+onMounted(() => { void load() })
 defineExpose({
   refresh: load,
+  openRecipeForm,
   getSharePayload: () => {
-    const user = getCurrentUser()
+    const user = appStore.user || getCurrentUser()
     return { title: `${user.name} 的食谱`, path: `/pages-sub/shared-recipes/index?shareId=${encodeURIComponent(shareId.value)}` }
   }
 })
@@ -202,20 +191,16 @@ defineExpose({
                   <AppIcon name="community" size="sm" /><text>广场</text>
                 </view>
                 <view v-if="authenticated" class="recipe-actions">
-                  <!-- #ifdef MP-WEIXIN --><button class="icon-action share-button" :disabled="!shareId"
-                    open-type="share" aria-label="分享菜谱" title="分享菜谱">
-                    <AppIcon name="share" size="sm" />
+                  <!-- #ifdef MP-WEIXIN --><button class="icon-action invite-button" :disabled="!shareId" open-type="share"
+                    aria-label="分享菜谱" title="分享菜谱">
+                    <text>邀请下单</text>
                   </button><!-- #endif -->
                   <!-- #ifdef H5 -->
-                  <view class="icon-action share-button" aria-label="分享菜谱" title="分享菜谱" @click="shareRecipes">
-                    <AppIcon name="share" size="sm" />
+                  <view class="icon-action invite-button" aria-label="分享菜谱" title="分享菜谱" @click="shareRecipes">
+                    <text>邀请下单</text>
                   </view><!-- #endif -->
-                  <view class="icon-action manage-button" aria-label="管理分类" title="管理分类" @click="openCategoryManager">
-                    <AppIcon name="settings" size="sm" />
-                  </view>
-                  <view class="icon-action add-button" aria-label="新建食谱" title="新建食谱"
-                    @click="uni.navigateTo({ url: '/pages-sub/recipe/edit' })">
-                    <AppIcon name="plus" size="sm" />
+                  <view class="nav-action manage-button" aria-label="管理分类" title="管理分类" @click="openCategoryManager">
+                    <AppIcon name="settings" size="sm" /><text>编辑</text>
                   </view>
                 </view>
               </view>
@@ -229,7 +214,7 @@ defineExpose({
           </view>
           <CategorySplit class="category-fill" :categories="categoryItems" :active-category="activeCategory"
             :total="visibleRecipes.length" :total-label="`${visibleRecipes.length} 道菜`"
-            :eyebrow="authenticated ? 'MY RECIPES' : 'FEATURED RECIPES'" @select="selectCategory">
+            eyebrow="MY RECIPES" @select="selectCategory">
             <view v-if="!visibleRecipes.length" class="empty-state">这个分类暂时没有菜品</view>
             <view v-else class="feed">
               <RecipeCard v-for="recipe in visibleRecipes" :key="recipe.id" :recipe="recipe" hide-edit hide-rating
@@ -547,23 +532,6 @@ defineExpose({
   transform: scale(.96);
 }
 
-.share-button {
-  border: 1rpx solid #f3d8c7;
-  background: #fff8f3;
-  color: #b36f4c;
-}
-
-.manage-button {
-  border: 1rpx solid #d8e8dd;
-  background: #f5faf6;
-  color: #36715e;
-}
-
-.add-button {
-  background: linear-gradient(135deg, #ff8a3d, #e8542e);
-  color: #fff;
-}
-
 .recipe-filter {
   display: flex;
   align-items: center;
@@ -844,10 +812,6 @@ defineExpose({
 </style>
 
 <style scoped>
-.my-page {
-  padding-top: 24rpx;
-}
-
 .eyebrow,
 .results-eyebrow {
   color: #c93d20;
@@ -857,9 +821,41 @@ defineExpose({
   color: #b8a99c;
 }
 
+.community-action {
+  width: 112rpx;
+  height: 50rpx;
+  border: 1rpx solid #d7eadf;
+  border-radius: 25rpx;
+  background: #edf7f0;
+  color: #47745f;
+  font-size: 22rpx;
+  box-shadow: 0 8rpx 18rpx rgba(71, 116, 95, .12);
+}
+
 .nav-action:active {
   background: rgba(232, 84, 46, .08);
   color: #e8542e;
+}
+
+.community-action:active {
+  background: #e1f0e6;
+  color: #36715e;
+}
+
+.manage-button {
+  width: 112rpx;
+  height: 50rpx;
+  border: 1rpx solid #eadfce;
+  border-radius: 25rpx;
+  background: #faf5ed;
+  color: #806b5c;
+  font-size: 22rpx;
+  box-shadow: 0 8rpx 18rpx rgba(128, 107, 92, .12);
+}
+
+.manage-button:active {
+  background: #f1e8da;
+  color: #6f5c4f;
 }
 
 .icon-action {
@@ -870,20 +866,26 @@ defineExpose({
   box-shadow: 0 8rpx 18rpx rgba(232, 84, 46, .05);
 }
 
-/* 纯图标按钮：图标作为 inline-flex 子项会被按 inline 基线对齐而偏下，
-   这里强制块级 flex 充满按钮并由 flex 居中，消除竖直偏移（仅作用于本页图标按钮） */
-.icon-action :deep(.app-icon) {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  color: currentColor;
+.invite-button {
+  width: 112rpx;
+  height: 50rpx;
+  border: 0;
+  border-radius: 25rpx;
+  background: #f27a32;
+  color: #fff;
+  font-size: 22rpx;
+  line-height: 1;
+  box-shadow: 0 8rpx 18rpx rgba(242, 122, 50, .22);
 }
 
-.icon-action.add-button {
-  border-color: transparent;
-  background: linear-gradient(135deg, #ff8a3d 0%, #e8542e 100%);
-  color: #fff;
-  box-shadow: 0 8rpx 18rpx rgba(232, 84, 46, .26);
+/* 纯图标按钮使用独立的固定尺寸，避免图标盒子撑满按钮造成视觉偏移。 */
+.icon-action :deep(.app-icon) {
+  display: inline-flex;
+  flex: 0 0 24rpx;
+  width: 24rpx;
+  height: 24rpx;
+  color: currentColor;
+  transform: translateY(-1rpx);
 }
 
 .recipe-stats {
@@ -938,8 +940,48 @@ defineExpose({
 }
 
 :deep(.recipe-card) {
+  min-height: 190rpx;
   border-color: #f0e3d6;
   box-shadow: 0 14rpx 30rpx rgba(232, 84, 46, .06);
+}
+
+:deep(.recipe-cover-wrap) {
+  flex-basis: 180rpx;
+  width: 180rpx;
+  height: 190rpx;
+}
+
+:deep(.recipe-body) {
+  padding: 15rpx 18rpx 12rpx;
+}
+
+:deep(.recipe-title) {
+  font-size: 28rpx;
+  line-height: 1.25;
+}
+
+:deep(.recipe-subtitle) {
+  min-height: 27rpx;
+  margin-top: 6rpx;
+  font-size: 19rpx;
+  line-height: 1.35;
+  -webkit-line-clamp: 1;
+}
+
+:deep(.recipe-meta) {
+  gap: 6rpx 12rpx;
+  margin-top: 8rpx;
+  font-size: 17rpx;
+}
+
+:deep(.tag-row) {
+  min-height: 26rpx;
+  padding-top: 6rpx;
+}
+
+:deep(.tag) {
+  padding: 4rpx 8rpx;
+  font-size: 16rpx;
 }
 
 :deep(.recipe-title) {

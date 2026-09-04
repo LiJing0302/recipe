@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { loginAccount, registerAccount } from '@/services/api'
-import { saveAuthSession } from '@/services/storage'
 import { loadIngredientConfigsRemote } from '@/services/ingredient-config'
-import type { UserProfile } from '@/types'
+import { useAppStore } from '@/stores/app'
 
-const emit = defineEmits<{ authenticated: [user: UserProfile] }>()
+const appStore = useAppStore()
 const mode = ref<'login' | 'register'>('login')
 const account = ref('')
 const password = ref('')
@@ -20,9 +19,8 @@ const submit = async () => {
   loading.value = true
   try {
     const result = mode.value === 'login' ? await loginAccount(normalizedAccount, password.value) : await registerAccount(normalizedAccount, password.value)
-    saveAuthSession(result.token, result.user)
-    await loadIngredientConfigsRemote()
-    emit('authenticated', result.user)
+    appStore.setSession(result.token, result.user)
+    await loadIngredientConfigsRemote().catch(() => undefined)
     uni.showToast({ title: mode.value === 'login' ? '登录成功' : '注册成功', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error instanceof Error ? error.message : '操作失败，请稍后重试', icon: 'none' })

@@ -3,18 +3,21 @@ import { computed, getCurrentInstance, nextTick, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
 import { INGREDIENTS_KITCHEN_CONFIG, kitchenZoneConfigs } from '@/config/ingredients-kitchen'
-import { addInventoryBatch, getFreshness, getInventoryBatches, loadInventoryBatches, updateInventoryBatch } from '@/services/inventory'
+import { getFreshness } from '@/services/inventory'
 import { filterInventoryByZone, groupInventoryBatches, type IngredientGroup, type InventoryZone } from '@/services/inventory-view'
 import { hideFloatingTabBar, showFloatingTabBar } from '@/services/tabbar'
 import { dropVideoCache, getCachedVideoSrc, primeVideoCache } from '@/services/video-cache'
 import { withLoginRequired } from '@/services/auth-guard'
+import { useAppStore } from '@/stores/app'
+import { useInventoryStore } from '@/stores/inventory'
 import type { IngredientInventoryBatch } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
+const appStore = useAppStore()
+const inventoryStore = useInventoryStore()
 const currentInstance = getCurrentInstance()
 
-const batches = ref<IngredientInventoryBatch[]>([])
-const loaded = ref(false)
+const batches = computed(() => inventoryStore.batches)
 const formOpen = ref(false)
 const editingBatch = ref<IngredientInventoryBatch>()
 type FridgeInteraction = 'idle' | 'opening' | 'opened' | 'closing'
@@ -86,7 +89,14 @@ const zoneStats = computed<Record<InventoryZone, ZoneStats>>(() => {
 })
 const getZoneStats = (zone: InventoryZone) => zoneStats.value[zone]
 const fridgeGroups = computed(() => getZoneStats('fridge').groups)
-const load = async () => { await loadInventoryBatches(); batches.value = [...getInventoryBatches()]; loaded.value = true }
+	const load = async () => {
+		if (!appStore.authenticated || inventoryStore.loaded || inventoryStore.loading) return
+		try {
+			await inventoryStore.load()
+		} catch (error) {
+			uni.showToast({ title: error instanceof Error ? error.message : '食材加载失败，请检查服务连接', icon: 'none' })
+		}
+	}
 const openAdd = withLoginRequired(() => { editingBatch.value = undefined; formOpen.value = true })
 const closeForm = () => { formOpen.value = false; editingBatch.value = undefined }
 const openCategories = withLoginRequired(() => uni.navigateTo({ url: '/pages-sub/ingredients/categories' }))
@@ -194,7 +204,7 @@ const armFridgePlayWatchdog = () => {
 				fridgeCacheFallbackUsed = true
 				dropVideoCache(kitchenConfig.fridgeVideo.src)
 				resetFridgeAnimation()
-				nextTick(openFridge)
+				nextTick(openFridgeVideo)
 				return
 			}
 			fridgeLog('播放仍无进展，跳过动画直接打开冰箱')
@@ -233,7 +243,10 @@ const startFridgeVideo = () => {
 	fridgeVideoReadyTimer = setTimeout(markFridgeVideoVisible, 2000)
 	armFridgePlayWatchdog()
 }
-const openFridge = withLoginRequired(() => {
+// 当前冰箱入口与其他区域一致，直接进入冰箱食材维护页。
+const openFridge = withLoginRequired(() => openZone('fridge'))
+// 暂停视频打开交互。旧逻辑保留在 openFridgeVideo 及相关辅助函数中，后续恢复时接回即可。
+const openFridgeVideo = withLoginRequired(() => {
 	if (fridgeInteraction.value !== 'idle') return
 	fridgeInteraction.value = 'opening'
 	fridgeCacheFallbackUsed = false
@@ -303,15 +316,14 @@ const handleFridgeVideoError = (event: FridgeVideoEvent) => {
 	if (usingCache && !fridgeCacheFallbackUsed) {
 		fridgeCacheFallbackUsed = true
 		resetFridgeAnimation()
-		nextTick(openFridge)
+		nextTick(openFridgeVideo)
 		return
 	}
 	fridgeInteraction.value = 'opened'
 }
 const openFridgeList = () => { resetFridgeAnimation(); openZone('fridge') }
 const handleZoneClick = (zone: InventoryZone) => {
-	if (zone === 'fridge') openFridge()
-	else openZone(zone)
+	openZone(zone)
 }
 /**
  * 把播放源切到已缓存的本地路径。播放过程中绝不能改 src，
@@ -344,24 +356,31 @@ const setPageScrollLock = (locked: boolean) => {
 const saveForm = async (draft: InventoryBatchDraft) => {
 	const isEditing = Boolean(editingBatch.value)
 	try {
-		if (editingBatch.value) await updateInventoryBatch(editingBatch.value.id, draft)
-		else await addInventoryBatch({ ...draft, sourceType: 'manual' })
-		closeForm(); await load()
+		if (editingBatch.value) await inventoryStore.updateBatch(editingBatch.value.id, draft)
+		else await inventoryStore.addBatch({ ...draft, sourceType: 'manual' })
+		closeForm()
 		uni.showToast({ title: isEditing ? '批次已更新' : '食材已加入库中', icon: 'success' })
 	} catch (error) { uni.showToast({ title: error instanceof Error ? error.message : '保存失败，请检查服务连接', icon: 'none' }) }
 }
-watch(() => props.active, (active) => {
-	setPageScrollLock(active)
-	if (active) {
-		showFloatingTabBar()
-		if (!loaded.value) void load()
-		// 切到食材库就开始后台缓存视频，等到用户点冰箱时基本已经落盘。
-		void primeFridgeVideo()
+	watch(() => props.active, (active) => {
+		setPageScrollLock(active)
+		if (active) {
+			showFloatingTabBar()
+			// 聚焦时直接使用 InventoryStore；只有当前会话尚未加载库存时才请求一次。
+			void load()
+		// 视频交互暂时停用，后续恢复时再开启资源预加载。
+		// void primeFridgeVideo()
 	} else {
 		resetFridgeAnimation()
 	}
 }, { immediate: true })
-defineExpose({ refresh: load })
+watch(() => appStore.sessionVersion, () => {
+	// sessionVersion 变化代表登录、退出或登录失效；先清掉页面私有状态，
+	// 不依赖组件是否被 uni-app 复用或重新挂载。
+		closeForm()
+		resetFridgeAnimation()
+		if (appStore.authenticated && props.active) void load()
+	})
 </script>
 
 <template>
@@ -381,37 +400,42 @@ defineExpose({ refresh: load })
 					</view>
 					<view class="kitchen-main-region">
 						<image class="kitchen-main-image" :src="kitchenConfig.background.main.src" mode="scaleToFill" />
-						<!-- #ifndef MP-WEIXIN -->
-						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle'" id="fridge-open-video"
-							class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
-							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
-							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-								:object-fit="kitchenConfig.fridgeVideo.objectFit"
-							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
-								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
-								@ended="handleFridgeVideoEnded"
-								@error="handleFridgeVideoError" />
-						<!-- #endif -->
-						<!-- #ifdef MP-WEIXIN -->
-						<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle' && fridgeInteraction !== 'closing'"
-							id="fridge-open-video" class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
-							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
-							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-								:object-fit="kitchenConfig.fridgeVideo.objectFit"
-							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
-								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
-								@ended="handleFridgeVideoEnded"
-								@error="handleFridgeVideoError" />
-						<video v-if="fridgeInteraction === 'closing'" id="fridge-close-video"
-							class="fridge-animation-video" :src="fridgeCloseVideoSrc" :autoplay="true"
-							:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
-							:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
-								:object-fit="kitchenConfig.fridgeVideo.objectFit"
-							:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
-								@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
-								@ended="handleFridgeVideoEnded"
-								@error="handleFridgeVideoError" />
-						<!-- #endif -->
+							<!-- 暂停冰箱视频 DOM，后续恢复视频交互时移除本注释并接回对应事件。 -->
+							<!-- #ifndef MP-WEIXIN -->
+							<!--
+							<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle'" id="fridge-open-video"
+								class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
+								:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
+								:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
+									:object-fit="kitchenConfig.fridgeVideo.objectFit"
+								:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+									@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+									@ended="handleFridgeVideoEnded"
+									@error="handleFridgeVideoError" />
+							-->
+							<!-- #endif -->
+							<!-- #ifdef MP-WEIXIN -->
+							<!--
+							<video v-if="fridgeAlignmentDebug || fridgeInteraction !== 'idle' && fridgeInteraction !== 'closing'"
+								id="fridge-open-video" class="fridge-animation-video" :src="fridgeVideoSrc" :autoplay="false"
+								:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
+								:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
+									:object-fit="kitchenConfig.fridgeVideo.objectFit"
+								:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+									@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+									@ended="handleFridgeVideoEnded"
+									@error="handleFridgeVideoError" />
+							<video v-if="fridgeInteraction === 'closing'" id="fridge-close-video"
+								class="fridge-animation-video" :src="fridgeCloseVideoSrc" :autoplay="true"
+								:controls="false" :show-center-play-btn="false" :show-fullscreen-btn="false"
+								:show-play-btn="false" :show-mute-btn="false" :enable-progress-gesture="false"
+									:object-fit="kitchenConfig.fridgeVideo.objectFit"
+								:object-position="kitchenConfig.fridgeVideo.objectPosition" muted playsinline
+									@loadedmetadata="handleFridgeVideoLoadedMetadata" @timeupdate="handleFridgeVideoTimeUpdate"
+									@ended="handleFridgeVideoEnded"
+									@error="handleFridgeVideoError" />
+							-->
+							<!-- #endif -->
 						<view class="main-overlay">
 							<view v-for="zone in kitchenZones" :key="zone.key" class="scene-hotspot"
 								:style="getZoneHotspotStyle(zone)" :aria-label="zone.ariaLabel"
@@ -456,35 +480,38 @@ defineExpose({ refresh: load })
 				</view>
 			</view>
 		</view>
+		<!-- 暂停旧冰箱视频交互层，后续恢复视频交互时移除本注释。 -->
+		<!--
 		<view v-if="fridgeInteraction !== 'idle'" class="fridge-animation-layer"
-			:class="{ 'is-opening': fridgeInteraction === 'opening', 'is-opened': fridgeInteraction === 'opened', 'is-closing': fridgeInteraction === 'closing' }"
-			@click.self="closeFridgeAnimation">
-			<view class="fridge-animation-close" aria-label="关闭冰箱动画" @click="closeFridgeAnimation">
-				<AppIcon name="close" size="md" />
-			</view>
-			<view v-if="fridgeInteraction === 'opened'" class="fridge-food-sheet" @click.stop>
-				<view class="fridge-sheet-handle" />
-				<view class="fridge-sheet-header">
-					<view><text class="fridge-sheet-kicker">INSIDE THE FRIDGE</text><text
-							class="fridge-sheet-title">冰箱里的食材</text><text class="fridge-sheet-caption">{{
-								fridgeGroups.length }} 种食材，按优先使用顺序排列</text></view>
-					<view class="fridge-sheet-count">{{ fridgeGroups.length }}</view>
+				:class="{ 'is-opening': fridgeInteraction === 'opening', 'is-opened': fridgeInteraction === 'opened', 'is-closing': fridgeInteraction === 'closing' }"
+				@click.self="closeFridgeAnimation">
+				<view class="fridge-animation-close" aria-label="关闭冰箱动画" @click="closeFridgeAnimation">
+					<AppIcon name="close" size="md" />
 				</view>
-				<scroll-view scroll-y class="fridge-food-list">
-					<view v-for="group in fridgeGroups" :key="group.key" class="fridge-food-row">
-						<view class="fridge-food-status" :class="group.status" />
-						<view class="fridge-food-main"><text class="fridge-food-name">{{ group.name }}</text><text
+				<view v-if="fridgeInteraction === 'opened'" class="fridge-food-sheet" @click.stop>
+					<view class="fridge-sheet-handle" />
+					<view class="fridge-sheet-header">
+						<view><text class="fridge-sheet-kicker">INSIDE THE FRIDGE</text><text
+								class="fridge-sheet-title">冰箱里的食材</text><text class="fridge-sheet-caption">{{
+									fridgeGroups.length }} 种食材，按优先使用顺序排列</text></view>
+						<view class="fridge-sheet-count">{{ fridgeGroups.length }}</view>
+					</view>
+					<scroll-view scroll-y class="fridge-food-list">
+						<view v-for="group in fridgeGroups" :key="group.key" class="fridge-food-row">
+							<view class="fridge-food-status" :class="group.status" />
+							<view class="fridge-food-main"><text class="fridge-food-name">{{ group.name }}</text><text
 								class="fridge-food-meta">{{ group.batches.length }} 个批次 · {{ group.statusLabel }}</text>
+							</view>
+							<AppIcon name="chevron-right" size="sm" />
 						</view>
-						<AppIcon name="chevron-right" size="sm" />
-					</view>
-					<view v-if="!fridgeGroups.length" class="fridge-food-empty">
-						<AppIcon name="snowflake" size="md" /><text>冰箱里还没有记录食材</text>
-					</view>
-				</scroll-view>
-				<button class="fridge-list-button" @click="openFridgeList">查看全部冰箱食材</button>
+						<view v-if="!fridgeGroups.length" class="fridge-food-empty">
+							<AppIcon name="snowflake" size="md" /><text>冰箱里还没有记录食材</text>
+						</view>
+					</scroll-view>
+					<button class="fridge-list-button" @click="openFridgeList">查看全部冰箱食材</button>
+				</view>
 			</view>
-		</view>
+		-->
 		<InventoryBatchForm :open="formOpen" :batch="editingBatch" :title="editingBatch ? '编辑食材批次' : '添加食材'"
 			@close="closeForm" @save="saveForm" />
 	</view>
@@ -492,7 +519,6 @@ defineExpose({ refresh: load })
 
 <style scoped>
 .kitchen-page {
-	/* 使用统一原生导航栏后，厨房画布从 header 下方开始计算高度。 */
 	height: calc(100vh - var(--window-top) - var(--window-bottom));
 	min-height: 0;
 	padding: 0;

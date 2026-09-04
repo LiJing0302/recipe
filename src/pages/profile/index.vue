@@ -2,14 +2,16 @@
 import { computed, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import AuthPanel from '@/components/AuthPanel.vue'
-import { getCookingRecords } from '@/services/cooking'
-import { clearAuthSession, getCurrentUser, isAuthenticated, saveCurrentUser } from '@/services/storage'
+import { getCookingRecords, loadCookingRecords } from '@/services/cooking'
+import { getCurrentUser } from '@/services/storage'
+import { useAppStore } from '@/stores/app'
 import type { CookingRecord, UserProfile } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
 
-const user = ref<UserProfile>(getCurrentUser())
-const authenticated = ref(isAuthenticated())
+const appStore = useAppStore()
+const user = computed(() => appStore.user || getCurrentUser())
+const authenticated = computed(() => appStore.authenticated)
 const records = ref<CookingRecord[]>([])
 const loaded = ref(false)
 const totalCooking = computed(() => records.value.length)
@@ -20,20 +22,19 @@ const cookingDays = computed(() => new Set(
 ).size)
 
 const load = async () => {
-  authenticated.value = isAuthenticated()
-  if (!authenticated.value) {
+  if (!appStore.authenticated) {
+    records.value = []
     loaded.value = true
     return
   }
-  user.value = getCurrentUser()
+  await loadCookingRecords()
   records.value = getCookingRecords()
   loaded.value = true
 }
 
 watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
 defineExpose({ refresh: load })
-const handleAuthenticated = (nextUser: UserProfile) => { user.value = nextUser; authenticated.value = true; void load() }
-const logout = () => { clearAuthSession(); authenticated.value = false; records.value = []; uni.showToast({ title: '已退出登录', icon: 'none' }) }
+const logout = () => { appStore.logout(); records.value = []; uni.showToast({ title: '已退出登录', icon: 'none' }) }
 
 const showEdit = ref(false)
 const editName = ref('')
@@ -42,15 +43,14 @@ const openEdit = () => { editName.value = user.value.name; editBio.value = user.
 const saveEdit = () => {
   if (!editName.value.trim()) return uni.showToast({ title: '昵称不能为空', icon: 'none' })
   const updated: UserProfile = { ...user.value, name: editName.value.trim(), bio: editBio.value.trim() }
-  saveCurrentUser(updated)
-  user.value = getCurrentUser()
+  appStore.updateUser(updated)
   showEdit.value = false
   uni.showToast({ title: '已保存', icon: 'success' })
 }
 </script>
 
 <template>
-  <AuthPanel v-if="!authenticated" @authenticated="handleAuthenticated" />
+  <AuthPanel v-if="!authenticated" />
   <view v-else class="page-shell profile-page">
     <view class="profile-hero"><view class="profile-kicker-row"><text class="profile-kicker">MY KITCHEN</text><AppIcon name="spark" size="sm" /></view><view class="profile-head"><view class="avatar-wrap"><image :src="user.avatar" mode="aspectFill" /></view><view class="profile-copy"><text class="profile-name">{{ user.name }}</text><text class="profile-bio">{{ user.bio || '认真吃饭，也认真生活' }}</text></view><view class="edit" @click="openEdit"><AppIcon name="pencil" size="sm" /><text>编辑资料</text></view></view><view class="profile-stats"><view><text class="number">{{ totalCooking }}</text><text class="label">累计烹饪</text></view><view class="stats-divider" /><view><text class="number">{{ cookingDays }}</text><text class="label">烹饪日</text></view></view></view>
     <view class="settings"><view><view class="setting-icon"><AppIcon name="info" size="md" /></view><text>关于食光</text><text class="version">v0.1.0</text><AppIcon name="chevron-right" size="sm" /></view></view>

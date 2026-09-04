@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '@/config'
 import type { BasketPendingItem, CookingRecord, DatabaseSchema, IngredientInventoryBatch, MenuItem, Order, PublicRecipePage, Recipe, RecipeCategory, UserProfile, UserRecipeCategory } from '@/types'
-import { clearAuthSession, getAuthToken } from './storage'
+import { notifyAuthExpired } from './auth-session'
+import { getAuthToken } from './storage'
 import type { IngredientMappingPayload } from './ingredient-matching'
 
 type RecipePayload = Omit<Pick<Recipe, 'title' | 'subtitle' | 'cover' | 'categories' | 'ingredients' | 'steps' | 'tags' | 'flavor' | 'process' | 'servings' | 'duration' | 'difficulty' | 'isPublic'>, 'subtitle' | 'cover' | 'categories'> & { subtitle?: string; cover?: string; categories: string[] }
@@ -101,9 +102,10 @@ export interface RemotePurchaseItem {
 }
 
 const request = <T>(options: UniApp.RequestOptions) => new Promise<T>((resolve, reject) => {
+  const requestToken = getAuthToken()
   const header = {
     ...(options.data !== undefined ? { 'content-type': 'application/json' } : {}),
-    ...(getAuthToken() ? { authorization: `Bearer ${getAuthToken()}` } : {}),
+    ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}),
     ...(options.header || {})
   }
   uni.request({
@@ -112,12 +114,17 @@ const request = <T>(options: UniApp.RequestOptions) => new Promise<T>((resolve, 
     timeout: options.timeout || 5000,
     header,
     success: (response) => {
+      // 会话切换后，旧请求不能再把旧用户数据交给业务缓存或页面。
+      if (requestToken !== getAuthToken()) {
+        reject(new Error('登录状态已更新'))
+        return
+      }
       if (response.statusCode >= 200 && response.statusCode < 300) {
         resolve(response.data as T)
         return
       }
       const data = response.data as { message?: string } | undefined
-      if (response.statusCode === 401) clearAuthSession()
+      if (response.statusCode === 401) notifyAuthExpired()
       reject(new Error(data?.message || `API ${response.statusCode}`))
     },
     fail: reject
@@ -241,12 +248,13 @@ const compressForUpload = (filePath: string) => new Promise<string>((resolve) =>
 export const uploadImage = async (filePath: string, kind: 'cover' | 'step') => {
   const preparedPath = await compressForUpload(filePath)
   return new Promise<UploadedImage>((resolve, reject) => {
+    const requestToken = getAuthToken()
     uni.uploadFile({
       url: `${API_BASE_URL}/uploads/images`,
       filePath: preparedPath,
       name: 'file',
       formData: { kind },
-      header: { ...(getAuthToken() ? { authorization: `Bearer ${getAuthToken()}` } : {}) },
+      header: { ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}) },
       success: (response) => {
         let payload: { message?: string } | UploadedImage = {}
         try {
@@ -254,7 +262,12 @@ export const uploadImage = async (filePath: string, kind: 'cover' | 'step') => {
         } catch {
           payload = {}
         }
+        if (requestToken !== getAuthToken()) {
+          reject(new Error('登录状态已更新'))
+          return
+        }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          if (response.statusCode === 401) notifyAuthExpired()
           reject(new Error('message' in payload && payload.message ? payload.message : `Upload API ${response.statusCode}`))
           return
         }

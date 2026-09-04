@@ -90,6 +90,11 @@ const categoryFor = (name: string) => findIngredient(name)?.category || '其他'
 const remoteConfigs = new Map<string, IngredientConfig>()
 const remoteIngredientMeta = new Map<string, Omit<ConfiguredIngredientOption, 'ingredientKey'>>()
 
+export const clearIngredientConfigMemory = () => {
+  remoteConfigs.clear()
+  remoteIngredientMeta.clear()
+}
+
 type BaseUnit = NonNullable<IngredientExtraUnit['baseUnit']>
 type DefaultUnitDefinition = { unit: string; baseUnit?: BaseUnit; baseValue?: number }
 const QUALITATIVE_UNIT = '适量'

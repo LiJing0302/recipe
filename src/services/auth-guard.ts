@@ -1,5 +1,5 @@
 import { switchAppTab } from '@/services/tabbar'
-import { isAuthenticated } from '@/services/storage'
+import { useAppStore } from '@/stores/app'
 
 export const LOGIN_TAB_INDEX = 4
 
@@ -10,7 +10,7 @@ export const LOGIN_TAB_INDEX = 4
 export const withLoginRequired = <TArgs extends unknown[], TResult>(
   action: (...args: TArgs) => TResult
 ) => (...args: TArgs): TResult | undefined => {
-  if (!isAuthenticated()) {
+  if (!useAppStore().authenticated) {
     switchAppTab(LOGIN_TAB_INDEX)
     return undefined
   }

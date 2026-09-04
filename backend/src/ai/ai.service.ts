@@ -2,9 +2,15 @@ import { BadGatewayException, Injectable, InternalServerErrorException, Logger, 
 import OpenAI from 'openai'
 import { CreateAiResponseDto, type AiResponseFormat } from './dto'
 
-const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1'
-const DEFAULT_MODEL = 'qwen3.7-flash'
+const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+const DEFAULT_MODEL = 'qwen3.8-flash'
 const DEFAULT_TIMEOUT_MS = 60_000
+
+const normalizeBaseUrl = (value?: string) => {
+  const baseURL = (value?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, '')
+  // Keep deployments using the old template working after a restart.
+  return baseURL.replace(/\/api\/v2\/apps\/protocols\/compatible-mode\/v1$/, '/compatible-mode/v1')
+}
 
 type DashScopeChatCompletionParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
   enable_thinking?: boolean
@@ -37,7 +43,7 @@ export class AiService {
     if (apiKey) {
       this.client = new OpenAI({
         apiKey,
-        baseURL: process.env.DASHSCOPE_BASE_URL?.trim() || DEFAULT_BASE_URL,
+        baseURL: normalizeBaseUrl(process.env.DASHSCOPE_BASE_URL),
         timeout: this.parseTimeout(process.env.AI_TIMEOUT_MS),
         maxRetries: 1
       })

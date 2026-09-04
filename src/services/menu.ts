@@ -2,6 +2,8 @@ import type { MealType, MenuItem } from '@/types'
 import { addMenuRemote, deleteMenuRemote, getMenuRemote } from './api'
 
 const menuMemory: MenuItem[] = []
+export const clearMenuMemory = () => menuMemory.splice(0, menuMemory.length)
+
 export const loadMenu = async () => {
   const items = await getMenuRemote()
   menuMemory.splice(0, menuMemory.length, ...items)

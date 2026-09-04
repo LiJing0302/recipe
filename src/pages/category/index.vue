@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import CategorySplit from '@/components/CategorySplit.vue'
 import RecipeCard from '@/components/RecipeCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { DEFAULT_FAMILY_CATEGORY, FAMILY_CATEGORIES } from '@/constants/recipe'
 import { fetchMyRecipes, isCollected } from '@/services/recipe'
 import { getCurrentUser } from '@/services/storage'
@@ -52,10 +53,10 @@ onShow(() => {
 </script>
 
 <template>
-  <view class="page-shell category-page">
+  <view class="category-screen">
+    <PageHeader title="菜谱分类" />
+    <view class="page-shell category-page">
     <view class="page-intro">
-      <text class="eyebrow">RECIPE INDEX</text>
-      <text class="page-title">菜谱分类</text>
       <text class="page-desc">按家庭常用食材，找到今天想做的菜</text>
     </view>
 
@@ -76,11 +77,13 @@ onShow(() => {
         <RecipeCard v-for="recipe in recipes" :key="recipe.id" :recipe="recipe" :collected="collected[recipe.id]" @open="openRecipe" />
       </view>
     </CategorySplit>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.category-page { display: flex; flex-direction: column; height: 100vh; padding-top: 42rpx; padding-bottom: 24rpx; box-sizing: border-box; }
+.category-screen { display: flex; flex-direction: column; min-height: 100vh; background: #fdf8f2; }
+.category-page { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-top: 16rpx; padding-bottom: 24rpx; box-sizing: border-box; }
 .page-intro { flex-shrink: 0; padding: 14rpx 0 26rpx; }
 .eyebrow, .results-eyebrow { color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 16rpx; color: #33261e; font-size: 48rpx; font-weight: 700; }

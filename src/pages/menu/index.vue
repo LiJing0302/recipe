@@ -3,17 +3,21 @@ import { computed, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import CalendarGrid from '@/components/CalendarGrid.vue'
 import type { CalendarDay } from '@/components/CalendarGrid.vue'
-import { addRecipeToBasket, getBasketRecipes, loadBasket, removeRecipeFromBasketByRecipeId } from '@/services/basket'
+import { useBasketStore } from '@/stores/basket'
 import { formatDate, getDailyMenu, getMenuMap, loadMenu, removeMenuItem } from '@/services/menu'
 import { getOrdersForDate, loadOrders } from '@/services/order'
 import { fetchRecipeDetails } from '@/services/recipe'
 import { formatIngredientAmount } from '@/services/ingredient-matching'
-import { hasUsableIngredient, loadInventoryBatches } from '@/services/inventory'
 import { switchAppTab } from '@/services/tabbar'
 import { withLoginRequired } from '@/services/auth-guard'
+import { useAppStore } from '@/stores/app'
+import { useInventoryStore } from '@/stores/inventory'
 import type { Ingredient, MealType, MenuItem, Order, Recipe } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
+const appStore = useAppStore()
+const basketStore = useBasketStore()
+const inventoryStore = useInventoryStore()
 
 const selectedDate = ref(formatDate())
 const menu = ref<MenuItem[]>([])
@@ -35,20 +39,67 @@ const basketPickerOpen = ref(false)
 const basketRecipe = ref<Recipe>()
 const selectedBasketIngredientIds = ref<string[]>([])
 const basketSubmitting = ref(false)
+let menuLoadRequestId = 0
+const isCurrentMenuLoad = (requestId: number, sessionVersion: number) => (
+  requestId === menuLoadRequestId && sessionVersion === appStore.sessionVersion && appStore.authenticated
+)
 const load = async () => {
-  await Promise.all([loadMenu(), loadOrders(), loadBasket(), loadInventoryBatches()])
-  menu.value = getDailyMenu(selectedDate.value)
-  orders.value = getOrdersForDate(selectedDate.value)
-  menuMap.value = getMenuMap()
-  const recipes = await Promise.all(menu.value.map((item) => fetchRecipeDetails(item.recipeId).catch(() => undefined)))
-  recipeIngredients.value = Object.fromEntries(menu.value.map((item, index) => [item.recipeId, recipes[index]?.ingredients || []]))
-  loaded.value = true
+  const requestId = ++menuLoadRequestId
+  const requestSessionVersion = appStore.sessionVersion
+  if (!appStore.authenticated) {
+    menu.value = []
+    orders.value = []
+    menuMap.value = {}
+    recipeIngredients.value = {}
+    loaded.value = true
+    return
+  }
+  try {
+    await Promise.all([loadMenu(), loadOrders(), inventoryStore.refresh()])
+    if (!isCurrentMenuLoad(requestId, requestSessionVersion)) return
+    const nextMenu = getDailyMenu(selectedDate.value)
+    const recipes = await Promise.all(nextMenu.map((item) => fetchRecipeDetails(item.recipeId).catch(() => undefined)))
+    if (!isCurrentMenuLoad(requestId, requestSessionVersion)) return
+    menu.value = nextMenu
+    orders.value = getOrdersForDate(selectedDate.value)
+    menuMap.value = getMenuMap()
+    recipeIngredients.value = Object.fromEntries(nextMenu.map((item, index) => [item.recipeId, recipes[index]?.ingredients || []]))
+  } catch (error) {
+    if (!isCurrentMenuLoad(requestId, requestSessionVersion)) return
+    menu.value = []
+    orders.value = []
+    menuMap.value = {}
+    recipeIngredients.value = {}
+    uni.showToast({ title: error instanceof Error ? error.message : '菜单加载失败，请检查服务连接', icon: 'none' })
+  } finally {
+    if (requestId === menuLoadRequestId && requestSessionVersion === appStore.sessionVersion) loaded.value = true
+  }
 }
 const changeDate = (date: string) => { selectedDate.value = date; void load() }
-watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
+const goToday = () => {
+  const today = formatDate()
+  selectedDate.value = today
+  void load()
+}
+watch(() => props.active, (active) => { if (active) void load() }, { immediate: true })
+watch(() => appStore.sessionVersion, () => {
+  // sessionVersion 变化代表登录、退出或登录失效；清理页面私有状态，
+  // 不依赖组件是否被 uni-app 复用或重新挂载。
+  menuLoadRequestId += 1
+  menu.value = []
+  orders.value = []
+  menuMap.value = {}
+  recipeIngredients.value = {}
+  basketPickerOpen.value = false
+  basketRecipe.value = undefined
+  selectedBasketIngredientIds.value = []
+  basketSubmitting.value = false
+  loaded.value = !appStore.authenticated
+  if (appStore.authenticated && props.active) void load()
+})
 /** 日历插槽：某天三餐完成情况（0=未安排 1=已安排） */
 const mealStatusOf = (day: CalendarDay): boolean[] => mealOptions.map((meal) => (menuMap.value[day.value] || []).some((item) => item.meal === meal.value))
-const remove = async (item: MenuItem) => { if (isPastDate.value) return; try { await Promise.all([removeMenuItem(item.id), removeRecipeFromBasketByRecipeId(item.recipeId, item.date)]); await load(); uni.showToast({ title: '已从计划和菜篮子移除', icon: 'none' }) } catch { uni.showToast({ title: '移除失败，请检查服务连接', icon: 'none' }) } }
+const remove = async (item: MenuItem) => { if (isPastDate.value) return; try { await Promise.all([removeMenuItem(item.id), basketStore.removeRecipe(item.recipeId)]); await load(); uni.showToast({ title: '已从计划和菜篮子移除', icon: 'none' }) } catch { uni.showToast({ title: '移除失败，请检查服务连接', icon: 'none' }) } }
 const openBasketPicker = withLoginRequired(async (item: MenuItem) => {
   try {
     basketRecipe.value = await fetchRecipeDetails(item.recipeId)
@@ -58,7 +109,7 @@ const openBasketPicker = withLoginRequired(async (item: MenuItem) => {
 })
 const closeBasketPicker = () => { if (!basketSubmitting.value) basketPickerOpen.value = false }
 const isBasketSelected = (id: string) => selectedBasketIngredientIds.value.includes(id)
-const isAlreadyInBasket = (id: string) => Boolean(basketRecipe.value && getBasketRecipes().some((item) => item.recipeId === basketRecipe.value?.id && item.ingredientId === id))
+const isAlreadyInBasket = (id: string) => Boolean(basketRecipe.value && basketStore.items.some((item) => item.recipeId === basketRecipe.value?.id && item.ingredientId === id))
 const toggleBasketIngredient = (ingredient: Ingredient) => {
   if (isAlreadyInBasket(ingredient.id)) return
   const ids = selectedBasketIngredientIds.value
@@ -68,13 +119,13 @@ const confirmBasketSelection = async () => {
   if (!basketRecipe.value || !selectedBasketIngredientIds.value.length) return uni.showToast({ title: '请至少勾选一项食材', icon: 'none' })
   basketSubmitting.value = true
   try {
-    await addRecipeToBasket(basketRecipe.value.id, selectedDate.value, selectedBasketIngredientIds.value)
+    await basketStore.addRecipe(basketRecipe.value.id, selectedBasketIngredientIds.value)
     basketPickerOpen.value = false
-    await load()
     uni.showToast({ title: '已加入菜篮子', icon: 'success' })
   } catch { uni.showToast({ title: '加入失败，请检查服务连接', icon: 'none' }) } finally { basketSubmitting.value = false }
 }
-const basketIngredientIds = (recipeId: string) => new Set(getBasketRecipes().filter((item) => item.recipeId === recipeId).map((item) => item.ingredientId))
+const basketIngredientIds = (recipeId: string) => new Set(basketStore.items.filter((item) => item.recipeId === recipeId).map((item) => item.ingredientId))
+const hasUsableIngredient = (ingredient: Ingredient) => inventoryStore.hasUsableIngredient(ingredient)
 const ingredientNotice = (item: MenuItem) => {
   const pendingIds = basketIngredientIds(item.recipeId)
   const missing: string[] = []
@@ -103,6 +154,7 @@ defineExpose({ refresh: load })
       </view>
 
       <view class="date-card">
+        <view class="date-card-head"><text class="date-card-label">选择日期</text><button class="today-button" @click="goToday">回到今天</button></view>
         <CalendarGrid collapsible allow-past :initial-date="selectedDate" @select="changeDate"><template
             #default="{ day, selected, disabled }">
             <view class="meal-dots" :class="{ 'meal-dots--dim': !day.inMonth }">
@@ -283,6 +335,35 @@ defineExpose({ refresh: load })
   border-radius: 24rpx;
   background: rgba(255, 255, 255, .92);
   box-shadow: 0 18rpx 34rpx rgba(214, 96, 44, .06);
+}
+
+.date-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4rpx;
+}
+
+.date-card-label {
+  color: #8a7a70;
+  font-size: 21rpx;
+  font-weight: 600;
+}
+
+.today-button {
+  height: 48rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 1rpx solid #f0c5b4;
+  border-radius: 999rpx;
+  background: #fff7f2;
+  color: #c93d20;
+  font-size: 20rpx;
+  line-height: 46rpx;
+}
+
+.today-button::after {
+  border: 0;
 }
 
 .date-card :deep(.cal) {

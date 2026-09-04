@@ -2,6 +2,7 @@
 import { onLoad } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import StepChecklist from '@/components/StepChecklist.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { completeCooking } from '@/services/cooking'
 import { fetchRecipe, getRecipeDetail } from '@/services/recipe'
 import type { Recipe } from '@/types'
@@ -34,11 +35,16 @@ const finish = async () => { if (!recipe.value) return; try { await completeCook
 </script>
 
 <template>
-  <view v-if="recipe" class="cook-page page-shell"><view class="cook-header"><view><text class="eyebrow">COOKING MODE</text><text class="cook-title">{{ recipe.title }}</text></view></view><view class="progress-block"><view class="progress-label"><text>完成进度</text><text>{{ progress }}%</text></view><view class="progress-track"><view class="progress-value" :style="{ width: `${progress}%` }" /></view></view><view class="current-step surface"><view class="step-label">正在进行 · 第 {{ currentStep + 1 }} 步</view><text class="current-title">{{ current?.title }}</text><text class="current-description">{{ current?.description }}</text><text v-if="current?.tip" class="current-tip">注意：{{ current.tip }}</text><button class="primary-button step-button" @click="completeCurrent">{{ currentStep === recipe.steps.length - 1 ? '完成烹饪' : '完成这一步' }}</button></view><view class="all-steps"><view class="section-row"><text class="section-title">步骤清单</text><text class="caption">点击可跳转</text></view><StepChecklist :steps="recipe.steps" :current="currentStep" :completed="completedSteps" @select="selectStep" /></view><view v-if="showFinish" class="modal-mask"><view class="finish-modal"><text class="modal-title">这顿饭完成了</text><text class="modal-desc">留下今天的味道，成为你的烹饪记录</text><view class="stars"><text v-for="item in 5" :key="item" :class="{ active: item <= rating }" @click="rating = item">★</text></view><textarea v-model="comment" placeholder="今天做得怎么样？" maxlength="100" /><button class="primary-button" @click="finish">保存烹饪记录</button></view></view></view><view v-else class="empty-state">食谱加载中…</view>
+  <view v-if="recipe" class="cook-screen">
+    <PageHeader title="烹饪模式" />
+    <view class="cook-page page-shell"><view class="cook-header"><view><text class="eyebrow">COOKING MODE</text><text class="cook-title">{{ recipe.title }}</text></view></view><view class="progress-block"><view class="progress-label"><text>完成进度</text><text>{{ progress }}%</text></view><view class="progress-track"><view class="progress-value" :style="{ width: `${progress}%` }" /></view></view><view class="current-step surface"><view class="step-label">正在进行 · 第 {{ currentStep + 1 }} 步</view><text class="current-title">{{ current?.title }}</text><text class="current-description">{{ current?.description }}</text><text v-if="current?.tip" class="current-tip">注意：{{ current.tip }}</text><button class="primary-button step-button" @click="completeCurrent">{{ currentStep === recipe.steps.length - 1 ? '完成烹饪' : '完成这一步' }}</button></view><view class="all-steps"><view class="section-row"><text class="section-title">步骤清单</text><text class="caption">点击可跳转</text></view><StepChecklist :steps="recipe.steps" :current="currentStep" :completed="completedSteps" @select="selectStep" /></view><view v-if="showFinish" class="modal-mask"><view class="finish-modal"><text class="modal-title">这顿饭完成了</text><text class="modal-desc">留下今天的味道，成为你的烹饪记录</text><view class="stars"><text v-for="item in 5" :key="item" :class="{ active: item <= rating }" @click="rating = item">★</text></view><textarea v-model="comment" placeholder="今天做得怎么样？" maxlength="100" /><button class="primary-button" @click="finish">保存烹饪记录</button></view></view></view>
+  </view>
+  <view v-else class="cook-screen"><PageHeader title="烹饪模式" /><view class="empty-state">食谱加载中…</view></view>
 </template>
 
 <style scoped>
-.cook-page { padding-top: 42rpx; padding-bottom: 60rpx; }
+.cook-screen { min-height: 100vh; background: #fdf8f2; }
+.cook-page { padding-top: 16rpx; padding-bottom: 60rpx; }
 .cook-header { display: flex; align-items: flex-end; justify-content: space-between; }
 .eyebrow { color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
 .cook-title { display: block; margin-top: 14rpx; color: #33261e; font-size: 42rpx; font-weight: 700; }

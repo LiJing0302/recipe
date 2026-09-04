@@ -7,11 +7,12 @@ import OptionPicker from '@/components/OptionPicker.vue'
 import { RECIPE_PROCESSES } from '@/constants/recipes'
 import { enrichIngredient, amountInputValue, parseIngredientAmount } from '@/services/ingredient-matching'
 import { getIngredientUnitOptions } from '@/services/ingredient-config'
-import { createRecipeRemote, fetchMyRecipeCategories, fetchRecipe, getRecipeDetail, updateRecipeRemote } from '@/services/recipe'
+import { fetchMyRecipeCategories, fetchRecipe, getRecipeDetail } from '@/services/recipe'
 import { suggestRecipeMetadata, suggestRecipeStep, suggestRecipeSubtitle, type RecipeStepAiMode, type RecipeStepSuggestion } from '@/pages-sub/services/ai'
 import { uploadImage } from '@/services/api'
 import { getCurrentUser } from '@/services/storage'
 import IngredientPicker from '@/components/IngredientPicker.vue'
+import { useRecipeStore } from '@/stores/recipe'
 import type { Ingredient, Recipe, RecipeDifficulty, RecipeProcess, RecipeStep, UserRecipeCategory } from '@/types'
 
 type EditorMode = 'create' | 'edit'
@@ -31,6 +32,7 @@ type FormState = {
 
 const props = withDefaults(defineProps<{ mode: EditorMode; recipeId?: string }>(), { recipeId: '' })
 const emit = defineEmits<{ saved: [recipe: Recipe] }>()
+const recipeStore = useRecipeStore()
 const difficulties: RecipeDifficulty[] = ['简单', '中等', '进阶']
 const processes = RECIPE_PROCESSES as readonly RecipeProcess[]
 const user = getCurrentUser()
@@ -383,7 +385,7 @@ const save = async () => {
   }
 
   try {
-    const saved = props.mode === 'edit' ? await updateRecipeRemote(recipe) : await createRecipeRemote(recipe)
+    const saved = props.mode === 'edit' ? await recipeStore.update(recipe) : await recipeStore.create(recipe)
     uni.showToast({ title: '已同步到云端', icon: 'success' })
     emit('saved', saved)
   } catch {
@@ -395,8 +397,7 @@ const save = async () => {
 <template>
   <view v-if="loading" class="empty-state">正在加载食谱...</view>
   <view v-else class="page-shell edit-page">
-    <view class="editor-header"><text class="eyebrow">{{ pageEyebrow }}</text><text class="page-title">{{ pageTitle
-        }}</text><text class="page-description">{{ pageDescription }}</text></view>
+    <view class="editor-header"><text class="page-description">{{ pageDescription }}</text></view>
     <view class="field-block">
       <view class="field-label-row"><text class="field-label">食谱名称</text><text v-if="aiMetadataLoading"
           class="ai-status">AI 识别中</text></view><input v-model="form.title" class="text-input large" placeholder="填写菜名"

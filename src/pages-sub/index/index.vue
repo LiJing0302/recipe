@@ -3,6 +3,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import RecipeCard from '@/components/RecipeCard.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { fetchCommunityRecipes, isCollected, loadCollections, toggleCollection } from '@/services/recipe'
 import { switchAppTab } from '@/services/tabbar'
 import type { Recipe } from '@/types'
@@ -29,6 +30,7 @@ onShow(() => { void load() })
 
 <template>
   <view class="home-page">
+    <PageHeader title="首页" :show-back="false" />
     <view class="home-top page-shell">
       <view class="topbar">
         <view class="brand-lockup"><view class="brand-mark"><view class="brand-leaf brand-leaf-one" /><view class="brand-leaf brand-leaf-two" /></view><view><text class="brand-name">食光</text><text class="brand-subtitle">一日三餐的灵感</text></view></view>
@@ -55,7 +57,7 @@ onShow(() => { void load() })
 
 <style scoped>
 .home-page { min-height: 100vh; overflow: hidden; background: #fdf8f2; }
-.home-top { padding-top: 38rpx; padding-bottom: 30rpx; }
+.home-top { padding-top: 20rpx; padding-bottom: 30rpx; }
 .topbar { display: flex; align-items: center; justify-content: space-between; }
 .brand-lockup { display: flex; align-items: center; gap: 12rpx; }
 .brand-mark { position: relative; width: 54rpx; height: 54rpx; border-radius: 18rpx 18rpx 18rpx 6rpx; background: linear-gradient(140deg, #ff8a3d 0%, #e8542e 100%); transform: rotate(-8deg); box-shadow: 0 8rpx 18rpx rgba(232, 84, 46, .28); }

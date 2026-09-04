@@ -62,6 +62,12 @@ export const updateRecipeRemote = (recipe: Recipe) => updateRecipeApi(recipe).th
 export const saveRecipeRemote = (recipe: Recipe) => getRecipeDetail(recipe.id) ? updateRecipeRemote(recipe) : createRecipeRemote(recipe)
 const collectionMemory = new Set<string>()
 let collectionsLoaded = false
+export const clearRecipeMemory = () => {
+  recipeMemory.clear()
+  collectionMemory.clear()
+  collectionsLoaded = false
+}
+
 export const loadCollections = async () => { const ids = await getCollectionsRemote(); collectionMemory.clear(); ids.forEach((id) => collectionMemory.add(id)); collectionsLoaded = true; return ids }
 export const isCollected = (id: string) => collectionMemory.has(id)
 

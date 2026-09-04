@@ -3,12 +3,17 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
-import { addInventoryBatch, getFreshness, getInventoryBatches, loadInventoryBatches, removeInventoryBatch, updateInventoryBatch } from '@/services/inventory'
+import PageHeader from '@/components/PageHeader.vue'
+import { getFreshness } from '@/services/inventory'
 import { filterInventoryByZone, getInventorySourceLabel, getStatusCaption, getStorageModeLabel, groupInventoryBatches, INVENTORY_ZONES, isInventoryZone, type InventoryZone } from '@/services/inventory-view'
+import { useAppStore } from '@/stores/app'
+import { useInventoryStore } from '@/stores/inventory'
 import type { IngredientInventoryBatch } from '@/types'
 
+const appStore = useAppStore()
+const inventoryStore = useInventoryStore()
 const zone = ref<InventoryZone>('fridge')
-const batches = ref<IngredientInventoryBatch[]>([])
+const batches = computed(() => inventoryStore.batches)
 const formOpen = ref(false)
 const editingBatch = ref<IngredientInventoryBatch>()
 const activeFilter = ref<'all' | 'priority' | 'fresh' | 'expired'>('all')
@@ -21,7 +26,14 @@ const attentionGroups = computed(() => filteredGroups.value.filter((group) => gr
 const regularGroups = computed(() => filteredGroups.value.filter((group) => group.status !== 'expiring' && group.status !== 'expired'))
 const freshnessSummary = computed(() => ({ expiring: zoneBatches.value.filter((batch) => getFreshness(batch).status === 'expiring').length }))
 
-const load = async () => { await loadInventoryBatches(); batches.value = [...getInventoryBatches()] }
+const load = async () => {
+  if (!appStore.authenticated) return
+  try {
+    await inventoryStore.refresh()
+  } catch (error) {
+    uni.showToast({ title: error instanceof Error ? error.message : '食材加载失败，请检查服务连接', icon: 'none' })
+  }
+}
 const openAdd = () => { editingBatch.value = undefined; formOpen.value = true }
 const openEdit = (batch: IngredientInventoryBatch) => { editingBatch.value = batch; formOpen.value = true }
 const closeForm = () => { formOpen.value = false; editingBatch.value = undefined }
@@ -35,16 +47,16 @@ const toggleGroup = (key: string) => {
 const saveForm = async (draft: InventoryBatchDraft) => {
   const isEditing = Boolean(editingBatch.value)
   try {
-    if (editingBatch.value) await updateInventoryBatch(editingBatch.value.id, draft)
-    else await addInventoryBatch({ ...draft, sourceType: 'manual' })
-    closeForm(); await load()
+    if (editingBatch.value) await inventoryStore.updateBatch(editingBatch.value.id, draft)
+    else await inventoryStore.addBatch({ ...draft, sourceType: 'manual' })
+    closeForm()
     uni.showToast({ title: isEditing ? '批次已更新' : '食材已加入库中', icon: 'success' })
   } catch (error) { uni.showToast({ title: error instanceof Error ? error.message : '保存失败，请检查服务连接', icon: 'none' }) }
 }
 const removeBatch = (batch: IngredientInventoryBatch) => {
   uni.showModal({ title: '删除食材批次', content: `确定删除“${batch.name}”的这一批次吗？`, confirmColor: '#b64f45', success: (result) => {
     if (!result.confirm) return
-    removeInventoryBatch(batch.id).then(() => load()).then(() => uni.showToast({ title: '已删除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '删除失败', icon: 'none' }))
+    inventoryStore.removeBatch(batch.id).then(() => uni.showToast({ title: '已删除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '删除失败', icon: 'none' }))
   } })
 }
 
@@ -53,7 +65,9 @@ onShow(load)
 </script>
 
 <template>
-  <view class="page-shell storage-page">
+  <view class="storage-screen">
+    <PageHeader title="食材区域" />
+    <view class="page-shell storage-page">
     <view class="storage-topbar"><view class="storage-heading"><text class="eyebrow">KITCHEN STORAGE</text><text class="page-title">{{ zoneConfig.title }}</text></view><button class="add-button" aria-label="添加食材" @click="openAdd"><AppIcon name="plus" size="sm" />添加</button></view>
     <view class="zone-intro"><text class="zone-description">{{ zoneConfig.description }}</text><view class="zone-summary"><text>{{ groups.length }} 种</text><text>{{ freshnessSummary.expiring }} 项临期</text></view></view>
     <view class="filter-tabs" role="tablist"><text class="filter-tab" :class="{ active: activeFilter === 'all' }" @click="activeFilter = 'all'">全部</text><text class="filter-tab" :class="{ active: activeFilter === 'priority' }" @click="activeFilter = 'priority'">优先使用</text><text class="filter-tab" :class="{ active: activeFilter === 'fresh' }" @click="activeFilter = 'fresh'">新鲜</text><text class="filter-tab" :class="{ active: activeFilter === 'expired' }" @click="activeFilter = 'expired'">已过期</text></view>
@@ -62,12 +76,14 @@ onShow(load)
       <view v-if="regularGroups.length" class="ingredient-section"><view class="section-heading"><view><text class="section-title">其他食材</text><text class="section-desc">按最近购入时间排列</text></view><text class="section-count">{{ regularGroups.length }} 种</text></view><view v-for="group in regularGroups" :key="group.key" class="ingredient-card surface" :class="{ expanded: isExpanded(group.key) }"><view class="ingredient-card-head" @click="toggleGroup(group.key)"><view class="ingredient-status-dot" :class="`dot-${group.status}`" /><view class="ingredient-card-main"><text class="ingredient-card-name">{{ group.name }}</text><text class="ingredient-card-meta">{{ group.batches.length }} 个批次 · 最近购入 {{ group.latestPurchasedAt.slice(0, 10) }}</text></view><view class="ingredient-card-status"><text class="freshness" :class="`freshness-${group.status}`">{{ group.statusLabel }}</text><text class="status-caption">{{ getStatusCaption(group) }}</text></view><AppIcon name="chevron-right" size="sm" class="expand-icon" /></view><view v-if="isExpanded(group.key)" class="batch-details"><view v-for="batch in group.batches" :key="batch.id" class="batch-row"><view class="batch-main"><text class="batch-name">{{ batch.name }}</text><text class="batch-date">购入 {{ batch.purchasedAt.slice(0, 10) }} · {{ getStorageModeLabel(batch.storageMode) }} · {{ getInventorySourceLabel(batch) }}</text></view><text class="freshness" :class="`freshness-${getFreshness(batch).status}`">{{ getFreshness(batch).label }}</text><view class="batch-actions"><AppIcon name="pencil" size="sm" @click.stop="openEdit(batch)" /><AppIcon name="trash" size="sm" @click.stop="removeBatch(batch)" /></view></view></view></view></view>
     </view>
     <view v-else class="empty-state storage-empty"><view class="empty-icon"><AppIcon name="leaf" size="lg" /></view><text class="empty-title">{{ zoneConfig.emptyTitle }}</text><text class="empty-desc">{{ zoneConfig.emptyDescription }}</text><button class="primary-button empty-button" @click="openAdd">添加食材</button></view>
-    <InventoryBatchForm :open="formOpen" :batch="editingBatch" :title="editingBatch ? '编辑食材批次' : '添加食材'" @close="closeForm" @save="saveForm" />
+    <InventoryBatchForm :open="formOpen" :batch="editingBatch" :category-filter="zone === 'seasoning' ? '调味品' : undefined" :title="editingBatch ? '编辑食材批次' : '添加食材'" @close="closeForm" @save="saveForm" />
+    </view>
   </view>
 </template>
 
 <style scoped>
-.storage-page { padding-top: 24rpx; padding-bottom: 126rpx; }
+.storage-screen { min-height: 100vh; background: #fdf8f2; }
+.storage-page { min-height: 0; padding: 0 28rpx 126rpx; }
 .storage-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; padding: 10rpx 2rpx 20rpx; }
 .storage-heading { flex: 1; min-width: 0; }
 .eyebrow { display: block; color: #b8862f; font-size: 17rpx; font-weight: 700; letter-spacing: 2rpx; }

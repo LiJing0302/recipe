@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import PageHeader from '@/components/PageHeader.vue'
 import { getDatabaseSchemaRemote } from '@/services/api'
 import type { DatabaseSchema, DatabaseTable } from '@/types'
 
@@ -42,9 +43,10 @@ onShow(load)
 </script>
 
 <template>
-  <view class="schema-page page-shell">
+  <view class="schema-screen">
+    <PageHeader title="数据库结构" />
+    <view class="schema-page page-shell">
     <view class="page-header">
-      <view><text class="eyebrow">DATABASE OBSERVER</text><text class="page-title">数据库结构</text><text class="page-desc">查看当前数据库的表、字段与关联关系</text></view>
       <button class="refresh-button" :disabled="loading" @click="load">{{ loading ? '同步中...' : '刷新结构' }}</button>
     </view>
 
@@ -68,12 +70,14 @@ onShow(load)
     </view>
 
     <view class="relations-section surface"><view class="section-heading"><view><text class="detail-kicker">RELATION MAP</text><text class="section-title">关联关系</text></view><text class="caption">只读 · 便于后续接入 DataEase</text></view><view v-if="allRelations" class="relation-map"><view v-for="table in tables" :key="table.name"><view v-for="relation in table.relations" :key="`${relation.tableName}-${relation.columnName}`" class="relation-line"><view class="relation-node"><text class="node-label">{{ relation.foreignTableName }}</text><text>{{ relation.foreignColumnName }}</text></view><view class="line-center"><text>1</text><view class="line" /><text>N</text></view><view class="relation-node target"><text class="node-label">{{ relation.tableName }}</text><text>{{ relation.columnName }}</text></view></view></view><view v-if="!allRelations" class="empty-state">当前没有外键关系</view></view></view>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.schema-page { min-height: 100vh; padding-top: 42rpx; padding-bottom: 70rpx; }
-.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24rpx; }
+.schema-screen { min-height: 100vh; background: #fdf8f2; }
+.schema-page { min-height: 0; padding-top: 16rpx; padding-bottom: 70rpx; }
+.page-header { display: flex; align-items: flex-end; justify-content: flex-end; gap: 24rpx; }
 .eyebrow, .detail-kicker { display: block; color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 14rpx; color: #33261e; font-size: 48rpx; font-weight: 700; }
 .page-desc { display: block; margin-top: 10rpx; color: #a29388; font-size: 24rpx; }

@@ -2,6 +2,8 @@ import type { Order } from '@/types'
 import { createOrderRemote, getOrdersRemote } from './api'
 
 const orderMemory: Order[] = []
+export const clearOrderMemory = () => orderMemory.splice(0, orderMemory.length)
+
 export const loadOrders = async () => { const orders = await getOrdersRemote(); orderMemory.splice(0, orderMemory.length, ...orders); return orderMemory }
 const getOrders = () => orderMemory
 export const getOrdersForDate = (date: string) => getOrders().filter((order) => order.date === date)

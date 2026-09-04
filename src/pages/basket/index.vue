@@ -2,19 +2,22 @@
 import { computed, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import InventoryBatchForm, { type InventoryBatchDraft } from '@/components/InventoryBatchForm.vue'
-import { getBasketRecipes, loadBasket, purchaseBasketItems, removeRecipeFromBasket } from '@/services/basket'
-import { addInventoryBatch, getFreshness, getInventoryBatches, getInventoryBatchesForDate, loadInventoryBatches } from '@/services/inventory'
 import { getIngredientCategory, INGREDIENT_CATALOG, INGREDIENT_CATEGORIES } from '@/constants/ingredients'
 import { formatIngredientAmount, getIngredientKey } from '@/services/ingredient-matching'
 import { formatDate } from '@/services/menu'
 import { withLoginRequired } from '@/services/auth-guard'
+import { useAppStore } from '@/stores/app'
+import { useBasketStore } from '@/stores/basket'
+import { useInventoryStore } from '@/stores/inventory'
 import type { BasketPendingItem, IngredientInventoryBatch } from '@/types'
 
 const props = defineProps<{ active: boolean }>()
+const appStore = useAppStore()
+const basketStore = useBasketStore()
+const inventoryStore = useInventoryStore()
 
-const pendingItems = ref<BasketPendingItem[]>([])
-const todayBatches = ref<IngredientInventoryBatch[]>([])
-const loaded = ref(false)
+const pendingItems = computed(() => basketStore.items)
+const todayBatches = computed(() => inventoryStore.batchesForDate(formatDate()))
 const formOpen = ref(false)
 const viewMode = ref<'ingredient' | 'recipe'>('recipe')
 type PendingIngredientGroup = {
@@ -45,13 +48,6 @@ const getBasketIngredientCategory = (name: string, ingredientKey?: string) => {
   return mappedIngredient?.category || getIngredientCategory(name)
 }
 
-const load = async () => {
-  await Promise.all([loadBasket(), loadInventoryBatches()])
-  pendingItems.value = getBasketRecipes()
-  todayBatches.value = getInventoryBatchesForDate(formatDate())
-  loaded.value = true
-}
-
 const pendingGroups = computed(() => {
   const groups = new Map<string, PendingIngredientGroup>()
   pendingItems.value.forEach((item) => {
@@ -65,7 +61,7 @@ const pendingGroups = computed(() => {
     groups.set(key, group)
   })
   groups.forEach((group) => {
-    group.available = getInventoryBatches().some((batch) => (batch.ingredientKey || getIngredientKey(batch.name)) === group.key && getFreshness(batch).status !== 'expired')
+    group.available = inventoryStore.hasUsableIngredient({ name: group.name, ingredientKey: group.key })
   })
   return [...groups.values()]
 })
@@ -136,16 +132,24 @@ const closeForm = () => { formOpen.value = false; purchaseGroup.value = undefine
 const saveForm = async (draft: InventoryBatchDraft) => {
   const isPurchase = Boolean(purchaseGroup.value)
   try {
-    if (purchaseGroup.value) await purchaseBasketItems(purchaseGroup.value.items.map((item) => item.id), { category: draft.category, purchasedAt: draft.purchasedAt, storageMode: draft.storageMode, ingredientKey: purchaseGroup.value.key })
-    else await addInventoryBatch({ ...draft, sourceType: 'manual' })
-    closeForm(); await load(); uni.showToast({ title: isPurchase ? '已采购并加入食材库' : '已加入今日已采购', icon: 'success' })
+    if (purchaseGroup.value) {
+      await basketStore.purchaseItems(purchaseGroup.value.items.map((item) => item.id), {
+        category: draft.category,
+        purchasedAt: draft.purchasedAt,
+        storageMode: draft.storageMode,
+        ingredientKey: purchaseGroup.value.key
+      })
+    } else {
+      await inventoryStore.addBatch({ ...draft, sourceType: 'manual' })
+    }
+    closeForm(); uni.showToast({ title: isPurchase ? '已采购并加入食材库' : '已加入今日已采购', icon: 'success' })
   } catch (error) { uni.showToast({ title: error instanceof Error ? error.message : '保存失败，请检查服务连接', icon: 'none' }) }
 }
 const removePending = (id: string) => {
   uni.showModal({
     title: '移除待采购项', content: '移除后不会再出现在菜篮子中。', confirmColor: '#b64f45', success: (result) => {
       if (!result.confirm) return
-      removeRecipeFromBasket(id).then(() => load()).then(() => uni.showToast({ title: '已移除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '移除失败', icon: 'none' }))
+      basketStore.removeItem(id).then(() => uni.showToast({ title: '已移除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '移除失败', icon: 'none' }))
     }
   })
 }
@@ -153,13 +157,25 @@ const removeGroup = (group: PendingIngredientGroup) => {
   uni.showModal({
     title: '移除待采购项', content: `移除 ${group.name} 后不会再出现在菜篮子中。`, confirmColor: '#b64f45', success: (result) => {
       if (!result.confirm) return
-      Promise.all(group.items.map((item) => removeRecipeFromBasket(item.id))).then(() => load()).then(() => uni.showToast({ title: '已移除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '移除失败', icon: 'none' }))
+      basketStore.removeItems(group.items.map((item) => item.id)).then(() => uni.showToast({ title: '已移除', icon: 'none' })).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '移除失败', icon: 'none' }))
     }
   })
 }
 const sourceLabel = (batch: IngredientInventoryBatch) => batch.sourceType === 'recipe' ? `来自：${batch.recipeTitle || '菜谱'}` : '今日购入'
-watch(() => props.active, (active) => { if (active && !loaded.value) void load() }, { immediate: true })
-defineExpose({ refresh: load, openManualForm })
+watch(() => props.active, (active) => {
+  // 菜篮子待采购项由 Basket Store 管理，切换 Tab 不重复请求菜篮子或库存接口。
+  // 极端情况下 Store 尚未初始化时，只走一次非强制 load。
+  if (active && appStore.authenticated && !inventoryStore.loaded) void inventoryStore.load().catch(() => undefined)
+}, { immediate: true })
+watch(() => appStore.sessionVersion, () => {
+  // 登录、退出或登录失效时，清理页面自己的库存展示和弹窗状态。
+  purchaseGroup.value = undefined
+  formOpen.value = false
+  viewMode.value = 'recipe'
+  if (appStore.authenticated && props.active && !inventoryStore.loaded) void inventoryStore.load().catch(() => undefined)
+})
+// 不暴露 refresh：根页面 onShow 和 Tab 聚焦不会再次请求菜篮子接口。
+defineExpose({ openManualForm })
 </script>
 
 <template>

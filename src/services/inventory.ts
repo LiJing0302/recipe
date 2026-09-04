@@ -18,20 +18,12 @@ export interface InventoryBatchInput {
   expiresAt?: string
 }
 
-const inventoryMemory: IngredientInventoryBatch[] = []
-
 export const normalizeIngredientName = (name: string) => name.trim().replace(/\s+/g, '').toLowerCase()
 
-export const loadInventoryBatches = async () => {
-  const batches = await getInventoryRemote()
-  inventoryMemory.splice(0, inventoryMemory.length, ...batches)
-  return inventoryMemory
-}
-export const getInventoryBatches = () => inventoryMemory
+/** 库存服务只负责请求后端；库存状态统一由 InventoryStore 持有。 */
+export const fetchInventoryBatches = () => getInventoryRemote()
 
-export const getInventoryBatchesForDate = (date = formatDate()) => getInventoryBatches().filter((batch) => batch.purchasedAt.slice(0, 10) === date)
-
-export const addInventoryBatch = async (input: InventoryBatchInput) => {
+export const createInventoryBatch = async (input: InventoryBatchInput) => {
   const storageMode = input.storageMode || 'chilled'
   const category = input.category || getIngredientCategory(input.name)
   const ingredient = enrichIngredient({ id: `ingredient-${Date.now()}`, name: input.name.trim(), amount: '' })
@@ -48,30 +40,30 @@ export const addInventoryBatch = async (input: InventoryBatchInput) => {
     ingredientKey: input.ingredientKey || ingredient.ingredientKey || getIngredientKey(input.name),
     storageMode,
     expiresAt,
-  }).then((batch) => { inventoryMemory.unshift(batch); return batch })
+  })
 }
 
-export const updateInventoryBatch = async (id: string, input: Omit<InventoryBatchInput, 'sourceType' | 'recipeId' | 'recipeTitle' | 'basketItemId'>) => {
+export const updateInventoryBatchRemote = async (id: string, input: Omit<InventoryBatchInput, 'sourceType' | 'recipeId' | 'recipeTitle' | 'basketItemId'>) => {
   return updateInventoryRemote(id, {
     ...input,
     sourceType: 'manual',
     ingredientKey: input.ingredientKey || getIngredientKey(input.name),
     expiresAt: input.expiresAt || calculateExpiresAt(input.purchasedAt, input.name, input.category || getIngredientCategory(input.name), input.storageMode || 'chilled'),
-  }).then((batch) => { const index = inventoryMemory.findIndex((item) => item.id === id); if (index >= 0) inventoryMemory[index] = batch; return batch })
+  })
 }
 
+export const removeInventoryBatchRemote = (id: string) => deleteInventoryRemote(id)
+
 /** 菜单和菜篮子只关心食材是否存在，不再比较库存数量。过期批次不算可用食材。 */
-export const hasUsableIngredient = (ingredient: Pick<Ingredient, 'name' | 'ingredientKey'>) => {
+export const hasUsableIngredient = (batches: readonly IngredientInventoryBatch[], ingredient: Pick<Ingredient, 'name' | 'ingredientKey'>) => {
   const key = ingredient.ingredientKey || getIngredientKey(ingredient.name)
   const normalized = normalizeIngredientName(ingredient.name)
-  return inventoryMemory.some((batch) => {
+  return batches.some((batch) => {
     if (getFreshness(batch).status === 'expired') return false
     const batchKey = batch.ingredientKey || getIngredientKey(batch.name)
     return batchKey === key || batch.normalizedName === normalized
   })
 }
-
-export const removeInventoryBatch = (id: string) => deleteInventoryRemote(id).then(() => { const index = inventoryMemory.findIndex((item) => item.id === id); if (index >= 0) inventoryMemory.splice(index, 1) })
 
 export const calculateExpiresAt = (purchasedAt: string, name: string, category: string, storageMode: 'room' | 'chilled' | 'frozen') => {
   const config = getIngredientConfig(name, category)

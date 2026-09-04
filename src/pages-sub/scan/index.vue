@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import RecipeCard from '@/components/RecipeCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { recognizeIngredients, recommendRecipes } from '@/pages-sub/services/ai'
 import type { IngredientRecognition, Recipe, RecipeRecommendation } from '@/types'
 
@@ -16,11 +17,14 @@ const updateAmount = (item: IngredientRecognition, event: any) => { item.amount 
 </script>
 
 <template>
-  <view class="page-shell scan-page"><view class="page-intro"><text class="eyebrow">INGREDIENT SCANNER</text><text class="page-title">识别我的食材</text><text class="page-desc">拍一张冰箱或菜篮子的照片，AI 帮你找出今天能做的菜</text></view><view class="scan-box" :class="{ filled: imageUrl }" @click="chooseImage"><image v-if="imageUrl" :src="imageUrl" mode="aspectFill" /><view v-else class="scan-placeholder"><text class="scan-mark">+</text><text>拍照或从相册选择</text><text class="caption">支持常见蔬菜、肉类和调味料</text></view><view v-if="imageUrl" class="retake">重新识别</view></view><view v-if="loading" class="loading surface">AI 正在看一看你的食材...</view><view v-if="ingredients.length && !loading" class="result-section"><view class="section-row"><text class="section-title">识别结果</text><text class="caption">可修改分量</text></view><view class="ingredients surface"><view v-for="item in ingredients" :key="item.id" class="ingredient-row"><view class="ingredient-name"><text>{{ item.name }}</text><text class="confidence">{{ Math.round(item.confidence * 100) }}% 匹配</text></view><input :value="item.amount" @input="updateAmount(item, $event)" /></view></view><view class="section-row recommend-head"><text class="section-title">适合做这些</text><text class="caption">按相关程度排序</text></view><view class="recommend-list"><view v-for="item in recommendations" :key="item.recipe.id" class="recommend-item surface" @click="uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${item.recipe.id}` })"><image :src="item.recipe.cover" mode="aspectFill" /><view class="recommend-copy"><view class="recommend-title-row"><text class="recommend-title">{{ item.recipe.title }}</text><text class="score">{{ item.score }}%</text></view><text class="reason">{{ item.reason }}</text><text v-if="item.missingIngredients.length" class="missing">还缺：{{ item.missingIngredients.join('、') }}</text></view></view></view></view></view>
+  <view class="scan-screen">
+    <PageHeader title="识别我的食材" />
+    <view class="page-shell scan-page"><view class="page-intro"><text class="page-desc">拍一张冰箱或菜篮子的照片，AI 帮你找出今天能做的菜</text></view><view class="scan-box" :class="{ filled: imageUrl }" @click="chooseImage"><image v-if="imageUrl" :src="imageUrl" mode="aspectFill" /><view v-else class="scan-placeholder"><text class="scan-mark">+</text><text>拍照或从相册选择</text><text class="caption">支持常见蔬菜、肉类和调味料</text></view><view v-if="imageUrl" class="retake">重新识别</view></view><view v-if="loading" class="loading surface">AI 正在看一看你的食材...</view><view v-if="ingredients.length && !loading" class="result-section"><view class="section-row"><text class="section-title">识别结果</text><text class="caption">可修改分量</text></view><view class="ingredients surface"><view v-for="item in ingredients" :key="item.id" class="ingredient-row"><view class="ingredient-name"><text>{{ item.name }}</text><text class="confidence">{{ Math.round(item.confidence * 100) }}% 匹配</text></view><input :value="item.amount" @input="updateAmount(item, $event)" /></view></view><view class="section-row recommend-head"><text class="section-title">适合做这些</text><text class="caption">按相关程度排序</text></view><view class="recommend-list"><view v-for="item in recommendations" :key="item.recipe.id" class="recommend-item surface" @click="uni.navigateTo({ url: `/pages-sub/recipe/detail?id=${item.recipe.id}` })"><image :src="item.recipe.cover" mode="aspectFill" /><view class="recommend-copy"><view class="recommend-title-row"><text class="recommend-title">{{ item.recipe.title }}</text><text class="score">{{ item.score }}%</text></view><text class="reason">{{ item.reason }}</text><text v-if="item.missingIngredients.length" class="missing">还缺：{{ item.missingIngredients.join('、') }}</text></view></view></view></view></view></view>
 </template>
 
 <style scoped>
-.scan-page { padding-top: 42rpx; }
+.scan-screen { min-height: 100vh; background: #fdf8f2; }
+.scan-page { padding-top: 16rpx; }
 .page-intro { padding: 14rpx 0 30rpx; }
 .eyebrow { color: #8b948b; font-size: 20rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 16rpx; color: #33261e; font-size: 48rpx; font-weight: 700; }

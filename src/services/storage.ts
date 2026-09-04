@@ -5,6 +5,16 @@ const keys = {
   authToken: 'recipe-ai-auth-token'
 }
 
+const GUEST_USER: UserProfile = {
+  id: 'guest',
+  name: '游客',
+  avatar: '',
+  bio: '',
+  cookingDays: 0,
+  totalCooking: 0,
+  favoriteCount: 0
+}
+
 const legacyBusinessStorageKeys = [
   'recipe-ai-recipes',
   'recipe-ai-menu',
@@ -31,20 +41,19 @@ export const writeStorage = <T>(key: string, value: T) => {
   uni.setStorageSync(key, JSON.stringify(value))
 }
 
-export const getCurrentUser = (): UserProfile => readStorage<UserProfile>(keys.user, {
-  id: 'me',
-  name: '林小满',
-  avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80',
-  bio: '把每天的一餐，做成值得记住的事。',
-  cookingDays: 18,
-  totalCooking: 36,
-  favoriteCount: 12
-})
+export const getStoredUser = () => readStorage<UserProfile | null>(keys.user, null)
+export const getAuthToken = () => readStorage<string>(keys.authToken, '')
+export const getCurrentUser = (): UserProfile => {
+  const user = getStoredUser()
+  return getAuthToken() && user ? user : { ...GUEST_USER }
+}
 
 export const saveCurrentUser = (user: UserProfile) => writeStorage(keys.user, user)
-export const getAuthToken = () => readStorage<string>(keys.authToken, '')
 export const saveAuthSession = (token: string, user: UserProfile) => { writeStorage(keys.authToken, token); saveCurrentUser(user) }
-export const clearAuthSession = () => uni.removeStorageSync(keys.authToken)
+export const clearAuthSession = () => {
+  uni.removeStorageSync(keys.authToken)
+  uni.removeStorageSync(keys.user)
+}
 export const isAuthenticated = () => Boolean(getAuthToken())
 const BUSINESS_DATA_CLEANUP_VERSION = 'recipe-ai-business-api-v1'
 export const clearLegacyBusinessDataOnce = () => {

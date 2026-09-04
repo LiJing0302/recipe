@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import CategorySplit from '@/components/CategorySplit.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import RecipeCard from '@/components/RecipeCard.vue'
 import { DEFAULT_FAMILY_CATEGORY } from '@/constants/recipe'
 import { fetchSharedRecipeCategories, fetchSharedRecipes } from '@/services/recipe'
@@ -66,8 +67,10 @@ onShareAppMessage(() => ({ title: pageTitle.value, path: `/pages-sub/shared-reci
 </script>
 
 <template>
-  <view class="page-shell shared-page">
-    <view class="shared-header"><view><text class="eyebrow">FROM A FRIEND'S KITCHEN</text><text class="page-title">{{ pageTitle }}</text><text class="shared-desc">看看这份被认真收好的家常味道</text></view><text class="readonly-label">分享菜单</text></view>
+  <view class="shared-screen">
+    <PageHeader :title="pageTitle" />
+    <view class="page-shell shared-page">
+    <view class="shared-header"><text class="readonly-label">分享菜单</text></view>
     <view v-if="loading" class="empty-state">正在加载食谱...</view>
     <view v-else-if="error" class="empty-state"><text>{{ error }}</text></view>
     <CategorySplit
@@ -84,12 +87,14 @@ onShareAppMessage(() => ({ title: pageTitle.value, path: `/pages-sub/shared-reci
         <RecipeCard v-for="recipe in visibleRecipes" :key="recipe.id" :recipe="recipe" readonly @open="openRecipe" />
       </view>
     </CategorySplit>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.shared-page { display: flex; flex-direction: column; height: 100vh; padding-top: 28rpx; padding-bottom: 20rpx; box-sizing: border-box; }
-.shared-header { display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; padding: 14rpx 2rpx 0; }
+.shared-screen { display: flex; flex-direction: column; min-height: 100vh; background: #fdf8f2; }
+.shared-page { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-top: 12rpx; padding-bottom: 20rpx; box-sizing: border-box; }
+.shared-header { display: flex; align-items: flex-start; justify-content: flex-end; flex-shrink: 0; padding: 0 2rpx 0; }
 .eyebrow { display: block; color: #a18470; font-size: 18rpx; font-weight: 600; letter-spacing: 1.7rpx; }
 .page-title { display: block; max-width: 460rpx; margin-top: 11rpx; overflow: hidden; color: #33261e; font-size: 48rpx; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .shared-desc { display: block; margin-top: 8rpx; color: #8b978f; font-size: 22rpx; }

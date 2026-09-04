@@ -36,6 +36,8 @@ const normalize = (value: string) => value.trim().replace(/[\s·、，,。！？
 const keyFor = (name: string) => `ingredient:${normalize(name)}`
 type SavedMapping = { ingredientKey: string; targetName?: string; targetCategory?: string; matchMethod: IngredientMatchMethod; confidence?: number; confirmedAt?: string }
 const mappingCache = new Map<string, SavedMapping>()
+export const clearIngredientMappingMemory = () => mappingCache.clear()
+
 const savedMapping = (sourceName: string) => mappingCache.get(normalize(sourceName))
 
 export const loadIngredientMappingsRemote = async () => {
